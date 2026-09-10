@@ -1,0 +1,152 @@
+{
+  "_note": [
+    "The source list. leaning/market are the press-map coordinates the globe",
+    "uses for position; weight is relative reach.",
+    "",
+    "EVERY feed url below is UNVERIFIED. They are the conventional endpoints and",
+    "several will be wrong or moved. Run `python3 -m ingest.run check` before",
+    "trusting any of them, and fix this file from what it reports. Guessing a",
+    "feed url and finding out in week six is exactly the failure this file",
+    "exists to prevent.",
+    "",
+    "kind: 'top' feeds are the curated front-page selection and are the ones the",
+    "dwell proxy reads. 'section' feeds are for coverage. If an outlet's top feed",
+    "turns out to be strictly reverse-chronological, mark curated:false - its",
+    "position signal is worthless and salience falls back to counts."
+  ],
+
+  "outlets": [
+    {
+      "id": "bbc", "name": "BBC News", "leaning": -0.05, "market": 0.58, "weight": 1.25,
+      "homepage": "https://www.bbc.co.uk/news",
+      "archive_url": "bbc.co.uk/news",
+      "feeds": [
+        { "url": "https://feeds.bbci.co.uk/news/rss.xml", "kind": "top", "curated": null },
+        { "url": "https://feeds.bbci.co.uk/news/uk/rss.xml", "kind": "section" },
+        { "url": "https://feeds.bbci.co.uk/news/politics/rss.xml", "kind": "section" }
+      ]
+    },
+    {
+      "id": "sky", "name": "Sky News", "leaning": 0.08, "market": 0.52, "weight": 1.00,
+      "homepage": "https://news.sky.com/",
+      "archive_url": "https://news.sky.com/",
+      "feeds": [
+        { "url": "https://feeds.skynews.com/feeds/rss/home.xml", "kind": "top", "curated": null },
+        { "url": "https://feeds.skynews.com/feeds/rss/uk.xml", "kind": "section" },
+        { "url": "https://feeds.skynews.com/feeds/rss/politics.xml", "kind": "section" }
+      ]
+    },
+    {
+      "id": "guardian", "name": "The Guardian", "leaning": -0.72, "market": 0.36, "weight": 1.10,
+      "homepage": "https://www.theguardian.com/uk",
+      "archive_url": "UNRESOLVED - see plan, the availability API returns nothing for any form",
+      "feeds": [
+        { "url": "https://www.theguardian.com/uk/rss", "kind": "top", "curated": null },
+        { "url": "https://www.theguardian.com/politics/rss", "kind": "section" }
+      ]
+    },
+    {
+      "id": "telegraph", "name": "The Telegraph", "leaning": 0.62, "market": 0.38, "weight": 1.00,
+      "homepage": "https://www.telegraph.co.uk/",
+      "archive_url": "telegraph.co.uk",
+      "feeds": [
+        { "url": "https://www.telegraph.co.uk/rss.xml", "kind": "top", "curated": null },
+        { "url": "https://www.telegraph.co.uk/politics/rss.xml", "kind": "section" }
+      ]
+    },
+    {
+      "id": "times", "name": "The Times", "leaning": 0.42, "market": 0.48, "weight": 0.95,
+      "homepage": "https://www.thetimes.com/",
+      "archive_url": "thetimes.co.uk",
+      "feeds": [
+        { "url": "https://www.thetimes.com/uk/rss", "kind": "top", "curated": null }
+      ]
+    },
+    {
+      "id": "mail", "name": "Daily Mail", "leaning": 0.68, "market": -0.30, "weight": 1.35,
+      "homepage": "https://www.dailymail.co.uk/home/index.html",
+      "archive_url": "www.dailymail.co.uk/home/index.html",
+      "feeds": [
+        { "url": "https://www.dailymail.co.uk/articles.rss", "kind": "top", "curated": null },
+        { "url": "https://www.dailymail.co.uk/news/index.rss", "kind": "section" }
+      ]
+    },
+    {
+      "id": "express", "name": "Express", "leaning": 0.72, "market": -0.52, "weight": 1.10,
+      "homepage": "https://www.express.co.uk/",
+      "archive_url": "https://www.express.co.uk/",
+      "feeds": [
+        { "url": "https://www.express.co.uk/posts/rss/1/news", "kind": "top", "curated": null },
+        { "url": "https://www.express.co.uk/posts/rss/78/politics", "kind": "section" }
+      ]
+    },
+    {
+      "id": "sun", "name": "The Sun", "leaning": 0.60, "market": -0.68, "weight": 1.15,
+      "homepage": "https://www.thesun.co.uk/",
+      "archive_url": "thesun.co.uk",
+      "feeds": [
+        { "url": "https://www.thesun.co.uk/feed/", "kind": "top", "curated": null },
+        { "url": "https://www.thesun.co.uk/news/feed/", "kind": "section" }
+      ]
+    },
+    {
+      "id": "mirror", "name": "Mirror", "leaning": -0.62, "market": -0.55, "weight": 1.05,
+      "homepage": "https://www.mirror.co.uk/",
+      "archive_url": "mirror.co.uk",
+      "feeds": [
+        { "url": "https://www.mirror.co.uk/?service=rss", "kind": "top", "curated": null },
+        { "url": "https://www.mirror.co.uk/news/?service=rss", "kind": "section" }
+      ]
+    },
+    {
+      "id": "metro", "name": "Metro", "leaning": 0.05, "market": -0.45, "weight": 0.80,
+      "homepage": "https://metro.co.uk/",
+      "archive_url": "metro.co.uk",
+      "feeds": [
+        { "url": "https://metro.co.uk/feed/", "kind": "top", "curated": null },
+        { "url": "https://metro.co.uk/news/feed/", "kind": "section" }
+      ]
+    },
+    {
+      "id": "independent", "name": "The Independent", "leaning": -0.46, "market": 0.28, "weight": 0.85,
+      "homepage": "https://www.independent.co.uk/",
+      "archive_url": "independent.co.uk",
+      "feeds": [
+        { "url": "https://www.independent.co.uk/news/uk/rss", "kind": "top", "curated": null },
+        { "url": "https://www.independent.co.uk/news/uk/politics/rss", "kind": "section" }
+      ]
+    },
+    {
+      "id": "i", "name": "i paper", "leaning": -0.28, "market": 0.32, "weight": 0.60,
+      "homepage": "https://inews.co.uk/",
+      "archive_url": "inews.co.uk",
+      "feeds": [
+        { "url": "https://inews.co.uk/feed", "kind": "top", "curated": null }
+      ]
+    },
+    {
+      "id": "ft", "name": "Financial Times", "leaning": 0.30, "market": 0.68, "weight": 0.80,
+      "homepage": "https://www.ft.com/",
+      "archive_url": "ft.com",
+      "feeds": [
+        { "url": "https://www.ft.com/rss/home/uk", "kind": "top", "curated": null }
+      ]
+    },
+    {
+      "id": "itv", "name": "ITV News", "leaning": 0.00, "market": 0.45, "weight": 0.60,
+      "homepage": "https://www.itv.com/news",
+      "archive_url": "itv.com/news",
+      "feeds": [
+        { "url": "https://www.itv.com/news/index.rss", "kind": "top", "curated": null }
+      ]
+    },
+    {
+      "id": "c4", "name": "Channel 4 News", "leaning": -0.20, "market": 0.50, "weight": 0.50,
+      "homepage": "https://www.channel4.com/news/",
+      "archive_url": "channel4.com/news",
+      "feeds": [
+        { "url": "https://www.channel4.com/news/feed", "kind": "top", "curated": null }
+      ]
+    }
+  ]
+}

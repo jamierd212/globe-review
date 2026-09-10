@@ -1,0 +1,52 @@
+name: ingest
+
+# Hourly, 06:00-22:00 UK. Cron here is UTC, so this is BST-shifted for half the
+# year; that is deliberate - the alternative is a job that silently moves an
+# hour twice a year and quietly changes what "hourly since 06:00" means.
+on:
+  schedule:
+    - cron: "7 5-21 * * *"
+  workflow_dispatch:
+
+# one run at a time: two polls writing the same SQLite file would corrupt it,
+# and a skipped hour is a far cheaper loss than a corrupted archive
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # no pip install: the ingest is standard library only, on purpose
+
+      - name: Poll every feed
+        run: python3 -m ingest.run poll
+
+      - name: Daily report
+        if: github.event.schedule == '7 21 * * *' || github.event_name == 'workflow_dispatch'
+        run: python3 -m ingest.run report 1
+
+      - name: Commit the archive
+        run: |
+          git config user.name  "ingest"
+          git config user.email "ingest@users.noreply.github.com"
+          git add -A data/
+          if git diff --cached --quiet; then
+            echo "nothing to commit"
+          else
+            git commit -m "ingest: $(date -u +%Y-%m-%dT%H:%MZ)"
+            # another hour's run may have landed while this one was working
+            git pull --rebase --autostash
+            git push
+          fi
