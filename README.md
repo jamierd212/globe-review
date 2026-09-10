@@ -53,6 +53,8 @@ trusting any number downstream.
 | `ingest/dedup.py` | agency-copy detection: url → title → token overlap |
 | `ingest/run.py` | `check`, `poll`, `report` |
 | `taxonomy.json` | ~40 standing subjects. A **label on a story**, never drawn on the globe |
+| `cluster/embed.py` | turns a headline into numbers. Works with nothing installed |
+| `cluster/group.py` | groups today's articles into stories |
 | `cluster/identity.py` | keeps a story the same story from one day to the next |
 | `cluster/naming.md` | how a story gets named, and how it records what it is about |
 | `score/rubric.md` | the scoring instruction: scale, desk handling, confidence, abstention, worked examples |
@@ -69,9 +71,14 @@ trusting any number downstream.
   settlements", not "Middle East". Days to weeks, then gone.
 - `taxonomy.json` is a **label attached to a story**. Never drawn. It is only
   there so March can be compared with September.
-- `cluster/identity.py` is what keeps a story the same object overnight. Get it
-  wrong and it doesn't look like a bug — it looks like a very volatile news
-  cycle.
+- `cluster/group.py` forms the stories; `cluster/identity.py` keeps each one the
+  same object overnight. Get the second wrong and it doesn't look like a bug —
+  it looks like a very volatile news cycle.
+- Clustering runs with **nothing installed**. `cluster/embed.py` counts words
+  and word pairs, which is enough to group wire copy and follow-ups. Swap in
+  `sentence-transformers` later and compare properly — but **the similarity
+  threshold is different for each**, and copying the wrong one gives an empty
+  globe with no error.
 
 ## The subject list runs ahead of the data on purpose
 
