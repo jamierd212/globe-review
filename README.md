@@ -14,6 +14,7 @@ python3 -m ingest.run check        # are the feed urls real? DO THIS FIRST
 python3 -m ingest.run poll         # one pass over every feed
 python3 -m ingest.run report 1     # the go/no-go table + data/daily.csv
 python3 tests/test_ingest.py       # no network needed
+python3 tests/test_taxonomy.py     # no network needed
 ```
 
 `outlets.json` is a list of **educated guesses**. Several feed URLs will be
@@ -29,7 +30,29 @@ trusting any number downstream.
 | `ingest/feeds.py` | fetch + parse RSS/Atom, stdlib only |
 | `ingest/dedup.py` | agency-copy detection: url → title → token overlap |
 | `ingest/run.py` | `check`, `poll`, `report` |
+| `taxonomy.json` | the 42 issues, each with an explicit stance target and a written polarity expectation |
+| `score/rubric.md` | the scoring instruction: scale, desk handling, confidence, abstention, worked examples |
+| `score/direction.py` | the direction regression — asserts the sign of left-minus-right on the issues that are not in doubt |
 | `prominence_probe.py` | the separate salience question: robots audit + homepage type tiers |
+
+## The taxonomy runs ahead of the data on purpose
+
+`taxonomy.json` and `score/rubric.md` need no articles to write and are the
+thing that inverts scores if they are wrong, so they come before the first
+feed lands rather than after. Two rules do the work:
+
+**Every issue names a stance target.** Stance is favourability *toward the
+thing the target names*. "Net zero rollback" is the worked example — the target
+is the weakening of the commitments, so a paper cheering the delay is +2. Read
+as "net zero" instead, the Guardian and the Express both come out backwards.
+
+**Fifteen of the 42 assert a direction.** Where the left/right ordering is
+genuinely not in doubt, `score/direction.py` asserts the *sign* of
+left-minus-right on every scoring run — never the magnitude, which moves with
+the news. A flat week reports INCONCLUSIVE rather than failing the build. The
+other 27 record an expectation that is deliberately not tested, either because
+the press agrees (nobody is in favour of high energy bills) or because the
+answer depends on who is in government.
 
 ## Two things that are deliberate
 
