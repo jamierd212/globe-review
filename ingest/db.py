@@ -73,6 +73,39 @@ CREATE TABLE IF NOT EXISTS observation (
 CREATE INDEX IF NOT EXISTS ix_obs_article ON observation (article_id, polled_at);
 CREATE INDEX IF NOT EXISTS ix_obs_feed    ON observation (feed_id, polled_at);
 
+-- A STORY is what the globe draws: one running event, covered by several
+-- outlets, named from the coverage itself. "UK sanctions on Israeli
+-- settlements", not "Middle East". Stories are born when a cluster forms and
+-- die when coverage stops, which is days to weeks - the churn is the point,
+-- and a globe showing the same labels every morning would be a dead object.
+--
+-- An ISSUE is the standing taxonomy entry a story is tagged with. It is NOT
+-- drawn. It exists so that March is comparable with September: a story cannot
+-- carry a six-month line because it does not live that long, and its issue
+-- can. One story, one primary issue, optionally more.
+CREATE TABLE IF NOT EXISTS story (
+  id          INTEGER PRIMARY KEY,
+  name        TEXT NOT NULL,      -- from the coverage, neutral; see cluster/naming.md
+  target      TEXT NOT NULL,      -- what stance is favourability TOWARD
+  issue_id    TEXT,               -- taxonomy.json id, or NULL = 'none of these'
+  first_seen  TEXT NOT NULL,
+  last_seen   TEXT NOT NULL,
+  status      TEXT NOT NULL,      -- 'live' | 'dormant' | 'closed'
+  centroid    BLOB,               -- packed float32, for next day's matching
+  n_articles  INTEGER NOT NULL DEFAULT 0,
+  target_conf TEXT                -- 'inherited' | 'generated' | 'reviewed'
+);
+CREATE INDEX IF NOT EXISTS ix_story_status ON story (status, last_seen);
+CREATE INDEX IF NOT EXISTS ix_story_issue  ON story (issue_id);
+
+CREATE TABLE IF NOT EXISTS story_member (
+  article_id INTEGER PRIMARY KEY REFERENCES article(id),
+  story_id   INTEGER NOT NULL REFERENCES story(id),
+  similarity REAL,
+  assigned_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_member_story ON story_member (story_id);
+
 -- near-duplicate clusters: the same agency copy under different mastheads
 CREATE TABLE IF NOT EXISTS dup_member (
   article_id INTEGER PRIMARY KEY REFERENCES article(id),

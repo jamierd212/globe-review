@@ -30,12 +30,24 @@ trusting any number downstream.
 | `ingest/feeds.py` | fetch + parse RSS/Atom, stdlib only |
 | `ingest/dedup.py` | agency-copy detection: url → title → token overlap |
 | `ingest/run.py` | `check`, `poll`, `report` |
-| `taxonomy.json` | the 42 issues, each with an explicit stance target and a written polarity expectation |
+| `taxonomy.json` | ~40 standing subjects. A **label on a story**, never drawn on the globe |
+| `cluster/identity.py` | keeps a story the same story from one day to the next |
+| `cluster/naming.md` | how a story gets named, and how it records what it is about |
 | `score/rubric.md` | the scoring instruction: scale, desk handling, confidence, abstention, worked examples |
 | `score/direction.py` | the direction regression — asserts the sign of left-minus-right on the issues that are not in doubt |
 | `prominence_probe.py` | the separate salience question: robots audit + homepage type tiers |
 
-## The taxonomy runs ahead of the data on purpose
+## Stories are drawn. Subjects are not.
+
+- A shape on the globe is **a story running now** — "UK sanctions on Israeli
+  settlements", not "Middle East". Days to weeks, then gone.
+- `taxonomy.json` is a **label attached to a story**. Never drawn. It is only
+  there so March can be compared with September.
+- `cluster/identity.py` is what keeps a story the same object overnight. Get it
+  wrong and it doesn't look like a bug — it looks like a very volatile news
+  cycle.
+
+## The subject list runs ahead of the data on purpose
 
 `taxonomy.json` and `score/rubric.md` need no articles to write and are the
 thing that inverts scores if they are wrong, so they come before the first
