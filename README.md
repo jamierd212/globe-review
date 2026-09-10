@@ -15,7 +15,29 @@ python3 -m ingest.run poll         # one pass over every feed
 python3 -m ingest.run report 1     # the go/no-go table + data/daily.csv
 python3 tests/test_ingest.py       # no network needed
 python3 tests/test_taxonomy.py     # no network needed
+python3 tests/test_identity.py     # no network needed
+python3 tests/test_scoring.py      # no network needed
 ```
+
+## Building the gold set
+
+```bash
+python3 -m score.gold draw  --n 300          # pick 300 items to label
+python3 -m score.gold label --who jamie      # label them, one at a time
+python3 -m score.gold agree --a jamie --b sam
+python3 -m score.gold check  --model runs/today.jsonl
+```
+
+Two people label the same items **without discussing them first**. If you talk
+it through you will agree, and you will have learned nothing. The point isn't
+the labels — it's finding which parts of the rubric two people read
+differently.
+
+The number that decides whether we can launch is not the average error. It's
+whether the error is the **same size for every paper**. An error that is even
+across the board can be measured and subtracted. One that hits the Mail harder
+than the Guardian means the instrument is unfair to particular titles, and
+that has to be fixed before anyone sees it.
 
 `outlets.json` is a list of **educated guesses**. Several feed URLs will be
 wrong. `check` tells you which; fix the file from what it reports before
@@ -34,7 +56,11 @@ trusting any number downstream.
 | `cluster/identity.py` | keeps a story the same story from one day to the next |
 | `cluster/naming.md` | how a story gets named, and how it records what it is about |
 | `score/rubric.md` | the scoring instruction: scale, desk handling, confidence, abstention, worked examples |
-| `score/direction.py` | the direction regression — asserts the sign of left-minus-right on the issues that are not in doubt |
+| `score/direction.py` | the direction check — asserts the sign of left-minus-right on the subjects that are not in doubt |
+| `score/gold.py` | the gold set: `draw`, `label`, `agree`, `check` |
+| `score/sample.py` | picks what to label — equal share per paper, not random |
+| `score/agreement.py` | how much two labellers agree, corrected for chance |
+| `score/calibrate.py` | how wrong the model is, and whether it is wrong evenly |
 | `prominence_probe.py` | the separate salience question: robots audit + homepage type tiers |
 
 ## Stories are drawn. Subjects are not.
