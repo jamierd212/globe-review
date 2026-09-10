@@ -1,0 +1,403 @@
+{
+  "version": 1,
+  "updated": "2026-09-10",
+
+  "_convention": [
+    "Stance is favourability TOWARD THE THING `target` NAMES. Nothing else.",
+    "",
+    "Every entry must carry a target, because an issue label that names an",
+    "event leaves the referent implicit, and getting it wrong does not blur a",
+    "score - it inverts it. 'Net zero rollback' is the worked example: the",
+    "Guardian is hostile to a rollback and the Express welcomes it, so an",
+    "instrument that reads the label as 'net zero' gets both papers backwards.",
+    "On a red-to-green globe an inverted issue is not slightly off, it is the",
+    "wrong colour.",
+    "",
+    "`expect` records the polarity we believe holds, in plain words, before any",
+    "data is scored. Where the left/right ordering is genuinely not in doubt,",
+    "set regression:true and the direction test asserts the SIGN of the",
+    "left-minus-right difference on every scoring run. That catches an",
+    "inversion the day it appears rather than after a month of archive.",
+    "",
+    "`expect` is a prior for testing, never an input to scoring. The scorer",
+    "must not see it. An issue where the data contradicts a non-regression",
+    "expectation is a finding, not a bug.",
+    "",
+    "`includes` / `excludes` are the boundary, and they exist because the",
+    "classifier will otherwise drift: 'Energy bills' quietly absorbs 'Net zero'",
+    "over a winter unless told not to.",
+    "",
+    "Changing this file changes the meaning of every score computed under it,",
+    "so bump `version`, never edit in place. A version change is a bounded",
+    "re-score of the archive, costed in the plan, not a tidy-up."
+  ],
+
+  "issues": [
+    {
+      "id": "small-boats", "name": "Small boats & asylum", "short": "Boats",
+      "target": "people crossing the Channel in small boats, and asylum seekers in the UK",
+      "expect": { "left": "favourable", "right": "hostile", "regression": true,
+                  "why": "the clearest left/right split in the British press" },
+      "includes": ["Channel crossings", "asylum hotels and dispersal", "removals and returns agreements", "asylum backlog"],
+      "excludes": ["legal migration and visa numbers -> legal-migration", "small boat deaths as a maritime rescue story only"],
+      "actors": ["Home Office", "asylum seekers", "France", "local councils"]
+    },
+    {
+      "id": "legal-migration", "name": "Legal migration & visas", "short": "Visas",
+      "target": "current levels of legal migration to the UK",
+      "expect": { "left": "mixed", "right": "hostile", "regression": false,
+                  "why": "the left is split between labour-supply and restrictionist arguments" },
+      "includes": ["net migration figures", "student and care visas", "salary thresholds"],
+      "excludes": ["asylum and small boats -> small-boats"],
+      "actors": ["Home Office", "employers", "universities", "NHS recruiters"]
+    },
+    {
+      "id": "nhs-pressure", "name": "NHS winter pressures", "short": "NHS",
+      "target": "the current state of the NHS",
+      "expect": { "left": "hostile", "right": "hostile", "regression": false,
+                  "why": "everyone reports it badly; they disagree on the cause, not the state. Scoring blame would be a different measurement" },
+      "includes": ["A&E waits", "ambulance handovers", "corridor care", "critical incidents"],
+      "excludes": ["staff pay disputes -> nhs-pay", "dentistry access -> dentistry", "social care funding -> social-care"],
+      "actors": ["NHS England", "trusts", "the health secretary", "patients"]
+    },
+    {
+      "id": "nhs-pay", "name": "NHS pay & industrial action", "short": "Pay",
+      "target": "the pay claims of NHS staff, including strike action",
+      "expect": { "left": "favourable", "right": "hostile", "regression": true,
+                  "why": "a straightforward industrial-action split" },
+      "includes": ["resident and junior doctors", "nurses", "consultants", "ballots and settlements"],
+      "excludes": ["service performance -> nhs-pressure"],
+      "actors": ["BMA", "RCN", "the health secretary", "patients"]
+    },
+    {
+      "id": "energy-bills", "name": "Energy bills & cost of living", "short": "Energy",
+      "target": "the level of household energy bills and living costs",
+      "expect": { "left": "hostile", "right": "hostile", "regression": false,
+                  "why": "no paper is in favour of high bills; the split is over who is blamed" },
+      "includes": ["price cap", "standing charges", "supplier profits", "fuel poverty"],
+      "excludes": ["climate policy costs -> net-zero-rollback", "water bills -> water-bills"],
+      "actors": ["Ofgem", "suppliers", "households", "the Treasury"]
+    },
+    {
+      "id": "budget-tax", "name": "Autumn Budget & taxation", "short": "Budget",
+      "target": "the Budget's tax and spending decisions as announced",
+      "expect": { "left": "mixed", "right": "hostile", "regression": false,
+                  "why": "depends entirely on the government of the day; do NOT regression-test this" },
+      "includes": ["income tax thresholds", "fuel duty", "departmental spending", "fiscal rules"],
+      "excludes": ["inheritance tax on farms -> farm-tax", "the pension triple lock -> triple-lock"],
+      "actors": ["the Chancellor", "the OBR", "taxpayers", "business"]
+    },
+    {
+      "id": "mortgages-rates", "name": "Interest rates & mortgages", "short": "Rates",
+      "target": "the current level of interest rates and mortgage costs",
+      "expect": { "left": "hostile", "right": "hostile", "regression": false },
+      "includes": ["Bank rate decisions", "mortgage pricing", "savers versus borrowers"],
+      "excludes": ["house prices and supply -> housing"],
+      "actors": ["Bank of England", "lenders", "mortgage holders"]
+    },
+    {
+      "id": "housing", "name": "Housing & planning reform", "short": "Housing",
+      "target": "building more homes, including planning reform to allow it",
+      "expect": { "left": "favourable", "right": "mixed", "regression": false,
+                  "why": "the right splits between growth and green-belt defence, so this one genuinely moves" },
+      "includes": ["housing targets", "green belt", "renters' reform", "social housing"],
+      "excludes": ["mortgage costs -> mortgages-rates", "homelessness as a welfare story"],
+      "actors": ["developers", "councils", "renters", "homeowners"]
+    },
+    {
+      "id": "net-zero-rollback", "name": "Net zero rollback", "short": "Net Zero",
+      "target": "WEAKENING or delaying net zero commitments",
+      "expect": { "left": "hostile", "right": "favourable", "regression": true,
+                  "why": "THE inversion case. The label names the rollback, not the policy. The Guardian opposes a rollback; the Express welcomes it. Read the wrong way round, this issue alone flips a quarter of the press map" },
+      "includes": ["target dates moved", "boiler and car deadlines", "green levies"],
+      "excludes": ["energy bills as household cost -> energy-bills", "airport expansion -> airports"],
+      "actors": ["the government", "motorists", "industry", "climate campaigners"]
+    },
+    {
+      "id": "climate-impacts", "name": "Climate impacts & storms", "short": "Storms",
+      "target": "the severity of extreme weather and its consequences in the UK",
+      "expect": { "left": "hostile", "right": "hostile", "regression": false,
+                  "why": "shared alarm about the event; attribution to climate change is the contested part and is not what this measures" },
+      "includes": ["named storms", "flooding", "heatwaves", "Environment Agency response"],
+      "excludes": ["climate policy -> net-zero-rollback"],
+      "actors": ["Met Office", "Environment Agency", "affected residents", "insurers"]
+    },
+    {
+      "id": "sewage", "name": "Water companies & sewage", "short": "Sewage",
+      "target": "the conduct of the privatised water companies",
+      "expect": { "left": "hostile", "right": "hostile", "regression": false,
+                  "why": "rare cross-press hostility; the split is over remedy, not conduct" },
+      "includes": ["storm overflows", "fines", "dividends and debt", "Ofwat enforcement"],
+      "excludes": ["bill increases -> water-bills"],
+      "actors": ["water companies", "Ofwat", "bathers and anglers"]
+    },
+    {
+      "id": "water-bills", "name": "Water bills", "short": "Water",
+      "target": "increases in household water bills",
+      "expect": { "left": "hostile", "right": "hostile", "regression": false },
+      "includes": ["price reviews", "affordability"],
+      "excludes": ["pollution and conduct -> sewage"],
+      "actors": ["water companies", "Ofwat", "households"]
+    },
+    {
+      "id": "crime-policing", "name": "Knife crime & policing", "short": "Knives",
+      "target": "current levels of violent crime, and police effectiveness against it",
+      "expect": { "left": "hostile", "right": "hostile", "regression": false,
+                  "why": "nobody is favourable to knife crime. The interesting axis here is salience, not stance" },
+      "includes": ["knife crime figures", "stop and search", "police numbers", "county lines"],
+      "excludes": ["sentencing and prisons -> prisons", "police vetting failures -> police-standards"],
+      "actors": ["police forces", "the Home Office", "victims", "young people"]
+    },
+    {
+      "id": "police-standards", "name": "Police vetting & standards", "short": "Vetting",
+      "target": "the conduct and vetting standards of the police",
+      "expect": { "left": "hostile", "right": "hostile", "regression": false },
+      "includes": ["misconduct cases", "vetting failures", "inspectorate reports"],
+      "excludes": ["crime levels -> crime-policing"],
+      "actors": ["police forces", "IOPC", "victims"]
+    },
+    {
+      "id": "prisons", "name": "Prisons & sentencing", "short": "Prisons",
+      "target": "shorter sentences and early release to relieve prison capacity",
+      "expect": { "left": "mixed", "right": "hostile", "regression": true,
+                  "why": "the right is reliably hostile to early release; the left is split between reform and victim concern" },
+      "includes": ["capacity crisis", "early release schemes", "sentencing guidelines"],
+      "excludes": ["crime levels -> crime-policing"],
+      "actors": ["the Ministry of Justice", "prison officers", "victims' groups"]
+    },
+    {
+      "id": "grooming-inquiry", "name": "Grooming gangs inquiry", "short": "Grooming",
+      "target": "a full national inquiry into grooming gangs",
+      "expect": { "left": "mixed", "right": "favourable", "regression": true,
+                  "why": "the right campaigns for the inquiry; the left is warier of the framing. Note the target is the INQUIRY, not the crimes - nobody is favourable to those" },
+      "includes": ["terms of reference", "local reviews", "survivor testimony"],
+      "excludes": ["policing failures generally -> police-standards"],
+      "actors": ["survivors", "the Home Office", "councils", "police"]
+    },
+    {
+      "id": "ukraine", "name": "Ukraine", "short": "Ukraine",
+      "target": "continued UK military and financial support for Ukraine",
+      "expect": { "left": "favourable", "right": "favourable", "regression": false,
+                  "why": "broad UK consensus, unlike the US press. Worth watching for divergence rather than assuming it" },
+      "includes": ["funding packages", "weapons", "peace talks", "refugees from Ukraine"],
+      "excludes": ["defence spending as a fiscal question -> budget-tax"],
+      "actors": ["Ukraine", "Russia", "NATO", "UK government"]
+    },
+    {
+      "id": "middle-east", "name": "Middle East", "short": "M. East",
+      "target": "Israeli military action in Gaza and the wider region",
+      "expect": { "left": "hostile", "right": "mixed", "regression": true,
+                  "why": "a real and stable split. The target must name whose action is being judged or this issue is meaningless" },
+      "includes": ["military operations", "ceasefire talks", "humanitarian access", "UK arms sales"],
+      "excludes": ["domestic protest and policing of it -> protest-policing"],
+      "actors": ["Israel", "Hamas", "Palestinians in Gaza", "the UK government"]
+    },
+    {
+      "id": "protest-policing", "name": "Protest & public order", "short": "Protest",
+      "target": "the right to protest as currently exercised, including disruptive protest",
+      "expect": { "left": "favourable", "right": "hostile", "regression": true,
+                  "why": "the target is the right to protest, not the cause being protested about - keep those apart or the sign follows whichever cause is in the news" },
+      "includes": ["marches", "public order powers", "injunctions", "arrests"],
+      "excludes": ["the causes protested about"],
+      "actors": ["protesters", "police", "the Home Office"]
+    },
+    {
+      "id": "reform-surge", "name": "Reform UK's rise", "short": "Reform",
+      "target": "Reform UK's growing support",
+      "expect": { "left": "hostile", "right": "favourable", "regression": true,
+                  "why": "a party-support target, reliably split" },
+      "includes": ["polling", "defections", "by-elections", "candidate vetting"],
+      "excludes": ["immigration policy itself -> small-boats or legal-migration"],
+      "actors": ["Reform UK", "the Conservatives", "Labour", "voters"]
+    },
+    {
+      "id": "ai-jobs", "name": "AI and the jobs market", "short": "AI",
+      "target": "the adoption of AI in the workplace",
+      "expect": { "left": "mixed", "right": "favourable", "regression": false,
+                  "why": "business optimism against labour displacement; moves with the news" },
+      "includes": ["restructuring announcements", "productivity claims", "regulation"],
+      "excludes": ["AI in schools -> ai-schools"],
+      "actors": ["employers", "workers", "unions", "the government"]
+    },
+    {
+      "id": "ai-schools", "name": "AI in schools", "short": "AI Schools",
+      "target": "the use of AI by pupils and teachers in schools",
+      "expect": { "left": "mixed", "right": "mixed", "regression": false },
+      "includes": ["marking", "cheating", "teacher workload"],
+      "excludes": ["the jobs market -> ai-jobs"],
+      "actors": ["schools", "teachers", "pupils", "exam boards"]
+    },
+    {
+      "id": "school-funding", "name": "SEND & school funding", "short": "Schools",
+      "target": "the current funding of schools and SEND provision",
+      "expect": { "left": "hostile", "right": "hostile", "regression": false },
+      "includes": ["SEND backlogs", "council deficits", "teacher recruitment"],
+      "excludes": ["university funding -> universities"],
+      "actors": ["schools", "councils", "parents", "the DfE"]
+    },
+    {
+      "id": "universities", "name": "University funding", "short": "Unis",
+      "target": "the financial position of UK universities and remedies for it",
+      "expect": { "left": "favourable", "right": "hostile", "regression": false,
+                  "why": "the right is hostile to bailouts and to the sector; the left more sympathetic, but this is softer than the regression cases" },
+      "includes": ["deficits and course closures", "tuition fees", "international students"],
+      "excludes": ["student visas -> legal-migration"],
+      "actors": ["universities", "students", "the DfE"]
+    },
+    {
+      "id": "social-care", "name": "Social care funding", "short": "Care",
+      "target": "the current funding and staffing of adult social care",
+      "expect": { "left": "hostile", "right": "hostile", "regression": false },
+      "includes": ["council placements", "care worker pay and visas", "reform commissions"],
+      "excludes": ["NHS performance -> nhs-pressure"],
+      "actors": ["care providers", "councils", "families", "care workers"]
+    },
+    {
+      "id": "dentistry", "name": "NHS dentistry access", "short": "Dentists",
+      "target": "the availability of NHS dentistry",
+      "expect": { "left": "hostile", "right": "hostile", "regression": false },
+      "includes": ["dental deserts", "contract reform", "DIY dentistry"],
+      "excludes": ["NHS performance generally -> nhs-pressure"],
+      "actors": ["dentists", "patients", "the DHSC"]
+    },
+    {
+      "id": "councils", "name": "Council finances", "short": "Councils",
+      "target": "the financial position of local councils",
+      "expect": { "left": "hostile", "right": "hostile", "regression": false },
+      "includes": ["section 114 notices", "council tax rises", "service cuts", "reorganisation"],
+      "excludes": ["SEND deficits specifically -> school-funding"],
+      "actors": ["councils", "residents", "the housing ministry"]
+    },
+    {
+      "id": "triple-lock", "name": "Pension triple lock", "short": "Pensions",
+      "target": "keeping the state pension triple lock",
+      "expect": { "left": "mixed", "right": "favourable", "regression": true,
+                  "why": "the right-leaning popular press defends it hard; the left is more willing to question it" },
+      "includes": ["uprating decisions", "affordability", "winter fuel interactions"],
+      "excludes": ["general tax policy -> budget-tax"],
+      "actors": ["pensioners", "the Treasury", "younger taxpayers"]
+    },
+    {
+      "id": "farm-tax", "name": "Farming & inheritance tax", "short": "Farms",
+      "target": "applying inheritance tax to farms",
+      "expect": { "left": "mixed", "right": "hostile", "regression": true,
+                  "why": "another target-direction case: the label names the tax, and the right opposes it" },
+      "includes": ["APR changes", "protests", "farm succession"],
+      "excludes": ["food prices", "environmental schemes"],
+      "actors": ["farmers", "the Treasury", "the NFU"]
+    },
+    {
+      "id": "licence-fee", "name": "BBC licence fee", "short": "Licence",
+      "target": "keeping the licence fee as the BBC's funding model",
+      "expect": { "left": "favourable", "right": "hostile", "regression": true,
+                  "why": "reliably split, and a useful check because the BBC scores itself here" },
+      "includes": ["settlements", "decriminalisation", "charter review", "alternatives"],
+      "excludes": ["BBC editorial rows unless about funding"],
+      "actors": ["the BBC", "the DCMS", "licence payers", "commercial rivals"]
+    },
+    {
+      "id": "channel-4", "name": "Channel 4's future", "short": "C4",
+      "target": "privatising or restructuring Channel 4",
+      "expect": { "left": "hostile", "right": "favourable", "regression": false,
+                  "why": "same shape as the licence fee but far lower volume, so noisier" },
+      "includes": ["ownership", "remit", "funding"],
+      "excludes": ["programming rows"],
+      "actors": ["Channel 4", "the DCMS", "independent producers"]
+    },
+    {
+      "id": "assisted-dying", "name": "Assisted dying bill", "short": "Assisted",
+      "target": "legalising assisted dying",
+      "expect": { "left": "mixed", "right": "mixed", "regression": false,
+                  "why": "a conscience issue that cuts ACROSS the left/right axis. Valuable precisely because it should show a flat gradient - if it shows a steep one, the model is reading party lines into a free vote" },
+      "includes": ["bill stages", "safeguards", "palliative care alternatives"],
+      "excludes": ["NHS capacity -> nhs-pressure"],
+      "actors": ["terminally ill people", "doctors", "disability groups", "faith groups"]
+    },
+    {
+      "id": "post-office", "name": "Post Office redress", "short": "Post",
+      "target": "compensation and redress for wrongly convicted subpostmasters",
+      "expect": { "left": "favourable", "right": "favourable", "regression": false,
+                  "why": "cross-press consensus; a good calibration control, since a model that manufactures a split here is over-reading" },
+      "includes": ["redress schemes", "the inquiry", "Fujitsu", "convictions overturned"],
+      "excludes": ["Royal Mail service issues"],
+      "actors": ["subpostmasters", "the Post Office", "Fujitsu", "government"]
+    },
+    {
+      "id": "rail", "name": "Rail fares & services", "short": "Rail",
+      "target": "the cost and reliability of rail travel",
+      "expect": { "left": "hostile", "right": "hostile", "regression": false },
+      "includes": ["fare rises", "cancellations", "nationalisation", "strikes"],
+      "excludes": ["HS2 and capital projects -> hs2"],
+      "actors": ["passengers", "operators", "unions", "the DfT"]
+    },
+    {
+      "id": "hs2", "name": "HS2 & rail investment", "short": "HS2",
+      "target": "continued investment in HS2 and major rail schemes",
+      "expect": { "left": "mixed", "right": "hostile", "regression": false },
+      "includes": ["cost overruns", "cancelled phases", "northern alternatives"],
+      "excludes": ["fares and services -> rail"],
+      "actors": ["HS2 Ltd", "the DfT", "northern leaders", "taxpayers"]
+    },
+    {
+      "id": "airports", "name": "Airport expansion", "short": "Airports",
+      "target": "expanding UK airport capacity",
+      "expect": { "left": "hostile", "right": "favourable", "regression": true,
+                  "why": "a clean growth-versus-environment split" },
+      "includes": ["third runway", "regional expansion", "noise and air quality"],
+      "excludes": ["climate targets generally -> net-zero-rollback"],
+      "actors": ["airport operators", "airlines", "residents", "campaigners"]
+    },
+    {
+      "id": "steel", "name": "Steel & heavy industry", "short": "Steel",
+      "target": "state support for UK steel and heavy industry",
+      "expect": { "left": "favourable", "right": "mixed", "regression": false },
+      "includes": ["plant closures", "furnace decisions", "subsidies", "jobs"],
+      "excludes": ["energy costs generally -> energy-bills"],
+      "actors": ["steelmakers", "unions", "communities", "the business department"]
+    },
+    {
+      "id": "gambling", "name": "Gambling reform", "short": "Gambling",
+      "target": "tighter regulation of gambling",
+      "expect": { "left": "favourable", "right": "mixed", "regression": false,
+                  "why": "cuts across: some right-leaning titles campaign hard on harm, others defend the industry and sport sponsorship" },
+      "includes": ["affordability checks", "advertising", "harm and addiction", "levy"],
+      "excludes": ["sports finance -> football"],
+      "actors": ["operators", "regulators", "people harmed by gambling", "sport"]
+    },
+    {
+      "id": "football", "name": "Football governance", "short": "Football",
+      "target": "independent regulation of English football",
+      "expect": { "left": "favourable", "right": "mixed", "regression": false },
+      "includes": ["the regulator", "ownership tests", "financial rules", "fan interests"],
+      "excludes": ["match reporting", "gambling sponsorship -> gambling"],
+      "actors": ["clubs", "fans", "the Premier League", "the regulator"]
+    },
+    {
+      "id": "royals", "name": "The Royal family", "short": "Royals",
+      "target": "the Royal family as an institution and its senior members",
+      "expect": { "left": "mixed", "right": "favourable", "regression": true,
+                  "why": "one of the few reliably POSITIVE targets on the right, which makes it a useful check that the scale is not stuck below zero" },
+      "includes": ["engagements", "health", "finances and the Duchy", "family rifts"],
+      "excludes": ["constitutional reform debates"],
+      "actors": ["the King", "senior royals", "the public"]
+    },
+    {
+      "id": "fishing", "name": "Fishing quotas & access", "short": "Fishing",
+      "target": "granting EU vessels access to UK fishing waters",
+      "expect": { "left": "mixed", "right": "hostile", "regression": true,
+                  "why": "target-direction case again: the label must name ACCESS, or the sign is ambiguous" },
+      "includes": ["quota negotiations", "access deals", "fleet viability"],
+      "excludes": ["wider EU relations -> eu-relations"],
+      "actors": ["UK fishers", "the EU", "coastal communities"]
+    },
+    {
+      "id": "eu-relations", "name": "UK-EU relations", "short": "EU",
+      "target": "closer alignment between the UK and the EU",
+      "expect": { "left": "favourable", "right": "hostile", "regression": true,
+                  "why": "the most durable axis in the British press" },
+      "includes": ["youth mobility", "veterinary and trade deals", "regulatory alignment"],
+      "excludes": ["fishing access -> fishing", "legal migration -> legal-migration"],
+      "actors": ["the UK government", "the EU", "exporters"]
+    }
+  ]
+}
