@@ -1,0 +1,119 @@
+"""Schema and connection.
+
+Two decisions here are load-bearing and hard to change later.
+
+1. `observation` records one row per article per feed per poll, with its
+   POSITION in the feed. That table is the substrate for the dwell proxy: how
+   long an outlet keeps a story near the top of its own front-page feed. It is
+   also the only thing here that cannot be reconstructed afterwards - a poll
+   you did not make is gone - so it is written from the very first run, months
+   before anything reads it.
+
+2. `poll` records every attempt, including the failures. An outlet that
+   quietly stops appearing looks exactly like an outlet that has gone quiet,
+   and without this table there is no way to tell them apart.
+"""
+
+import sqlite3
+import os
+
+SCHEMA = """
+PRAGMA journal_mode = WAL;
+
+CREATE TABLE IF NOT EXISTS outlet (
+  id       TEXT PRIMARY KEY,
+  name     TEXT NOT NULL,
+  leaning  REAL NOT NULL,      -- press-map x: left (-1) to right (+1)
+  market   REAL NOT NULL,      -- press-map y: popular (-1) to broadsheet (+1)
+  weight   REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS feed (
+  id        INTEGER PRIMARY KEY,
+  outlet_id TEXT NOT NULL REFERENCES outlet(id),
+  url       TEXT NOT NULL UNIQUE,
+  kind      TEXT NOT NULL,     -- 'top' (curated front page) | 'section'
+  curated   INTEGER            -- 1/0/NULL-unknown: does position mean anything?
+);
+
+CREATE TABLE IF NOT EXISTS article (
+  id           INTEGER PRIMARY KEY,
+  outlet_id    TEXT NOT NULL REFERENCES outlet(id),
+  url_canon    TEXT NOT NULL,
+  guid         TEXT,
+  title        TEXT NOT NULL,
+  standfirst   TEXT,
+  published_at TEXT,           -- ISO8601 UTC, from the feed; may be absent
+  first_seen   TEXT NOT NULL,  -- ISO8601 UTC, when WE first saw it
+  title_sig    TEXT NOT NULL,  -- normalised-title hash, for exact-dup catching
+  UNIQUE (outlet_id, url_canon)
+);
+CREATE INDEX IF NOT EXISTS ix_article_seen ON article (first_seen);
+CREATE INDEX IF NOT EXISTS ix_article_sig  ON article (title_sig);
+
+CREATE TABLE IF NOT EXISTS poll (
+  id          INTEGER PRIMARY KEY,
+  feed_id     INTEGER NOT NULL REFERENCES feed(id),
+  polled_at   TEXT NOT NULL,
+  http_status TEXT,            -- code, or the exception name
+  n_items     INTEGER NOT NULL DEFAULT 0,
+  n_new       INTEGER NOT NULL DEFAULT 0,
+  error       TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_poll_feed ON poll (feed_id, polled_at);
+
+CREATE TABLE IF NOT EXISTS observation (
+  poll_id    INTEGER NOT NULL REFERENCES poll(id),
+  feed_id    INTEGER NOT NULL REFERENCES feed(id),
+  article_id INTEGER NOT NULL REFERENCES article(id),
+  polled_at  TEXT NOT NULL,
+  position   INTEGER NOT NULL, -- 0 = first item in the feed
+  PRIMARY KEY (poll_id, article_id)
+);
+CREATE INDEX IF NOT EXISTS ix_obs_article ON observation (article_id, polled_at);
+CREATE INDEX IF NOT EXISTS ix_obs_feed    ON observation (feed_id, polled_at);
+
+-- near-duplicate clusters: the same agency copy under different mastheads
+CREATE TABLE IF NOT EXISTS dup_member (
+  article_id INTEGER PRIMARY KEY REFERENCES article(id),
+  group_id   INTEGER NOT NULL,
+  method     TEXT NOT NULL     -- 'url' | 'title' | 'jaccard'
+);
+CREATE INDEX IF NOT EXISTS ix_dup_group ON dup_member (group_id);
+"""
+
+DEFAULT_DB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                          "data", "ingest.sqlite")
+
+
+def connect(path=None):
+    path = path or DEFAULT_DB
+    if path != ":memory:":
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    con = sqlite3.connect(path)
+    con.row_factory = sqlite3.Row
+    con.executescript(SCHEMA)
+    return con
+
+
+def sync_outlets(con, spec):
+    """Bring outlet and feed rows into line with outlets.json.
+
+    Feeds are never deleted, only added: a feed that disappears from the config
+    still has history attached to it, and dropping the row would orphan every
+    observation made through it.
+    """
+    for o in spec["outlets"]:
+        con.execute(
+            "INSERT INTO outlet (id, name, leaning, market, weight) VALUES (?,?,?,?,?) "
+            "ON CONFLICT(id) DO UPDATE SET name=excluded.name, leaning=excluded.leaning, "
+            "market=excluded.market, weight=excluded.weight",
+            (o["id"], o["name"], o["leaning"], o["market"], o["weight"]))
+        for f in o["feeds"]:
+            cur = f.get("curated")
+            con.execute(
+                "INSERT INTO feed (outlet_id, url, kind, curated) VALUES (?,?,?,?) "
+                "ON CONFLICT(url) DO UPDATE SET kind=excluded.kind, curated=excluded.curated",
+                (o["id"], f["url"], f["kind"],
+                 None if cur is None else int(bool(cur))))
+    con.commit()

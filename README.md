@@ -1,0 +1,59 @@
+# Front Page Monitor — ingest
+
+Week one of [the plan](plan.html). No models, no UI, no clustering. This
+answers one question: **how many genuinely distinct articles arrive per outlet
+per day, and how much of that is the same agency copy under different
+mastheads?** If the answer is "not many, and mostly the same", the premise of
+measuring press attention by counting articles is in trouble, and it is much
+better to know that now.
+
+## First run, in order
+
+```bash
+python3 -m ingest.run check        # are the feed urls real? DO THIS FIRST
+python3 -m ingest.run poll         # one pass over every feed
+python3 -m ingest.run report 1     # the go/no-go table + data/daily.csv
+python3 tests/test_ingest.py       # no network needed
+```
+
+`outlets.json` is a list of **educated guesses**. Several feed URLs will be
+wrong. `check` tells you which; fix the file from what it reports before
+trusting any number downstream.
+
+## What is where
+
+| | |
+|---|---|
+| `outlets.json` | the source list: feeds, homepage, archived-URL form, press-map position |
+| `ingest/db.py` | schema. `observation` and `poll` are the two tables that matter |
+| `ingest/feeds.py` | fetch + parse RSS/Atom, stdlib only |
+| `ingest/dedup.py` | agency-copy detection: url → title → token overlap |
+| `ingest/run.py` | `check`, `poll`, `report` |
+| `prominence_probe.py` | the separate salience question: robots audit + homepage type tiers |
+
+## Two things that are deliberate
+
+**`observation` stores feed position on every poll.** It looks redundant now
+and nothing reads it yet. It is the substrate for the dwell proxy — how long an
+outlet keeps a story near the top of its own front page — and unlike everything
+else here it cannot be reconstructed later. A poll you did not make is gone.
+
+**`poll` records failures, not just successes.** An outlet that has quietly
+stopped answering looks exactly like an outlet that has gone quiet. Without
+this table there is no way to tell the difference, and the globe will keep
+drawing a confident picture either way.
+
+## Standard library only
+
+The ingest imports nothing outside the stdlib. This job runs unattended on a
+schedule for years, and every dependency is something that can rot. `feedparser`
+is friendlier; it is not worth the maintenance.
+
+## Still to verify
+
+- Every feed URL in `outlets.json`.
+- Whether each outlet's `top` feed is genuinely curated or just newest-first.
+  If newest-first, its position signal is worthless and salience for that
+  outlet falls back to counts. Poll one for a day and see whether the order
+  ever changes without a new item arriving.
+- Whether the Guardian is in the Internet Archive at all — see the plan.

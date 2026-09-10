@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+# SQLite side files only. The database itself is committed: the observation
+# table is the one thing in this project that cannot be reconstructed after
+# the fact, so it does not live only on one laptop. Phase 5 replaces this
+# with gzipped monthly shards once the schema settles.
+data/*.sqlite-wal
+data/*.sqlite-shm
