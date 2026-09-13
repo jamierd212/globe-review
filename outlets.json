@@ -138,7 +138,7 @@
           "verified": false
         }
       ],
-      "excluded": "robots.txt disallows everything for unnamed agents, and the RSS endpoint is gone - every candidate URL returns 404 or the HTML page."
+      "excluded": "no working RSS endpoint - every candidate URL returns 404 or the HTML page. Permission is moot until there is something to fetch."
     },
     {
       "id": "mail",
@@ -201,15 +201,17 @@
           "url": "https://www.thesun.co.uk/feed/",
           "kind": "top",
           "curated": null,
-          "verified": false
+          "verified": true,
+          "items_seen": 27
         },
         {
           "url": "https://www.thesun.co.uk/news/feed/",
           "kind": "section",
-          "verified": false
+          "verified": true,
+          "items_seen": 30
         }
       ],
-      "excluded": "robots.txt disallows everything for unnamed agents (User-agent: * / Disallow: /). The feed answers, but we said we would honour robots and this is the test of that."
+      "robots": "NOT PERMITTED. thesun.co.uk robots.txt is 'User-agent: * / Disallow: /' with an allowlist of about 48 named bots (Googlebot, Bingbot, Applebot, GPTBot, ChatGPT-User). We are not on it. Collected anyway by Jamie's decision on 13 Sept 2026, pending a request to News UK to be added. Revisit before launch: this has to be either resolved or stated plainly on the methodology page."
     },
     {
       "id": "mirror",

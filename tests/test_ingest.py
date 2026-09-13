@@ -100,6 +100,45 @@ def test_an_outlet_we_may_not_collect_never_enters_the_database():
     assert not (got & excluded), got & excluded
     assert got, "everything was excluded"
 
+def test_status_spots_a_feed_that_has_gone_quiet():
+    """The failure this guards against is silent: a feed keeps answering 200
+    but stops producing anything new, and the globe carries on with a hole."""
+    from ingest import status
+    con = db.connect(":memory:")
+    db.sync_outlets(con, {"outlets": [{"id": "sky", "name": "Sky", "leaning": 0.08,
+        "market": 0.52, "weight": 1.0, "feeds": [
+            {"url": "https://a/live", "kind": "top"},
+            {"url": "https://a/frozen", "kind": "section"},
+            {"url": "https://a/dead", "kind": "section"}]}]})
+    ids = {r["url"]: r["id"] for r in con.execute("SELECT id, url FROM feed")}
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    for h in range(48, -1, -1):
+        t = (now - timedelta(hours=h)).isoformat(timespec="seconds")
+        # live: answers and brings new articles
+        con.execute("INSERT INTO poll (feed_id,polled_at,http_status,n_items,n_new)"
+                    " VALUES (?,?,?,?,?)", (ids["https://a/live"], t, "200", 20, 2))
+        # frozen: answers with the same items forever
+        con.execute("INSERT INTO poll (feed_id,polled_at,http_status,n_items,n_new)"
+                    " VALUES (?,?,?,?,?)", (ids["https://a/frozen"], t, "200", 20, 0))
+        # dead: stopped answering a day ago
+        if h > 24:
+            con.execute("INSERT INTO poll (feed_id,polled_at,http_status,n_items,n_new)"
+                        " VALUES (?,?,?,?,?)", (ids["https://a/dead"], t, "200", 20, 1))
+    con.commit()
+    import tempfile, os as _os
+    path = _os.path.join(tempfile.mkdtemp(), "t.sqlite")
+    disk = db.connect(path)
+    con.backup(disk); disk.commit(); disk.close()
+    s = status.collect(path)
+    by_url = {r["url"]: r for r in s["feeds"]}
+    assert by_url["https://a/live"]["flags"] == [], by_url["https://a/live"]
+    assert "FROZEN" in by_url["https://a/frozen"]["flags"], by_url["https://a/frozen"]
+    assert "NOT ANSWERING" in by_url["https://a/dead"]["flags"], by_url["https://a/dead"]
+    txt = status.text(s)
+    assert "need attention" in txt
+    assert status.html(s).startswith("<!doctype html>")
+
 if __name__ == "__main__":
     fails = 0
     for n, fn in sorted(globals().items()):
