@@ -52,6 +52,7 @@ trusting any number downstream.
 | `ingest/feeds.py` | fetch + parse RSS/Atom, stdlib only |
 | `ingest/dedup.py` | agency-copy detection: url → title → token overlap |
 | `ingest/run.py` | `check`, `poll`, `report` |
+| `ingest/status.py` | are all the sources still live? terminal table + `data/status.html` |
 | `taxonomy.json` | ~40 standing subjects. A **label on a story**, never drawn on the globe |
 | `cluster/embed.py` | turns a headline into numbers. Works with nothing installed |
 | `cluster/group.py` | groups today's articles into stories |
@@ -65,6 +66,27 @@ trusting any number downstream.
 | `score/calibrate.py` | how wrong the model is, and whether it is wrong evenly |
 | `frames/fit.py` | works out the shapes on the globe, and checks they are honest |
 | `prominence_probe.py` | the separate salience question: robots audit + homepage type tiers |
+
+## Watching the sources
+
+```bash
+python3 -m ingest.status --html      # then open data/status.html
+```
+
+The failure this catches is the quiet one. A feed that stops answering looks
+exactly like a paper having a slow news day — the globe keeps being drawn,
+confidently, with a hole in it. Nothing throws an error.
+
+So it asks three questions of every feed, not one:
+
+- **live** — answered in the last few hours
+- **flowing** — brought *new* articles, not the same ones again. A paper that
+  changes its feed URL often leaves the old one serving a frozen copy forever,
+  and that returns 200 and parses perfectly
+- **normal** — producing roughly what it usually does, measured against its own
+  history rather than a fixed number
+
+The page refreshes itself every five minutes and the hourly job rewrites it.
 
 ## Stories are drawn. Subjects are not.
 
