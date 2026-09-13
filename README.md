@@ -56,6 +56,7 @@ trusting any number downstream.
 | `taxonomy.json` | ~40 standing subjects. A **label on a story**, never drawn on the globe |
 | `cluster/embed.py` | turns a headline into numbers. Works with nothing installed |
 | `cluster/group.py` | groups today's articles into stories |
+| `cluster/run.py` | does that against the collected articles and writes them back |
 | `cluster/identity.py` | keeps a story the same story from one day to the next |
 | `cluster/naming.md` | how a story gets named, and how it records what it is about |
 | `score/rubric.md` | the scoring instruction: scale, desk handling, confidence, abstention, worked examples |
@@ -66,6 +67,25 @@ trusting any number downstream.
 | `score/calibrate.py` | how wrong the model is, and whether it is wrong evenly |
 | `frames/fit.py` | works out the shapes on the globe, and checks they are honest |
 | `prominence_probe.py` | the separate salience question: robots audit + homepage type tiers |
+
+## What one day of real articles looks like
+
+From 930 articles across 13 papers, collected 13 Sept 2026:
+
+- **80% is news-ish; 20% is sport, showbiz or lifestyle** — and it is wildly
+  uneven. Mirror 37%, Metro 30%, Sun 28%, against Sky, Express and FT at 0%.
+  This matters more than it looks: "share of an outlet's own output" is
+  measuring a different denominator for each paper unless the non-news is
+  removed first. The taxonomy's "none of these" bucket does that, but it needs
+  the model, so it cannot be done in week one.
+- **Agency copy is almost invisible from headlines** — 0.1% by title
+  similarity, because the papers rewrite everything. "Boris Johnson escapes
+  Russian drone strike" (Express) against "Boris Johnson evacuated after train
+  drone strike" (Mirror). That is the premise holding up: the headline really
+  is the editorialised unit. It also means the wire-copy detector cannot
+  measure syndication without the body.
+- **Stories form sensibly.** The Johnson train story pulled 12 articles from 10
+  papers; Reform 11 from 8; a police appeal 9 from 7.
 
 ## Watching the sources
 

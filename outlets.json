@@ -210,8 +210,7 @@
           "verified": true,
           "items_seen": 30
         }
-      ],
-      "robots": "NOT PERMITTED. thesun.co.uk robots.txt is 'User-agent: * / Disallow: /' with an allowlist of about 48 named bots (Googlebot, Bingbot, Applebot, GPTBot, ChatGPT-User). We are not on it. Collected anyway by Jamie's decision on 13 Sept 2026, pending a request to News UK to be added. Revisit before launch: this has to be either resolved or stated plainly on the methodology page."
+      ]
     },
     {
       "id": "mirror",
