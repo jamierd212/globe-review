@@ -137,6 +137,10 @@ def sync_outlets(con, spec):
     observation made through it.
     """
     for o in spec["outlets"]:
+        # an outlet we are not allowed to collect is not put in the database at
+        # all, so nothing downstream can quietly start counting it
+        if o.get("excluded"):
+            continue
         con.execute(
             "INSERT INTO outlet (id, name, leaning, market, weight) VALUES (?,?,?,?,?) "
             "ON CONFLICT(id) DO UPDATE SET name=excluded.name, leaning=excluded.leaning, "

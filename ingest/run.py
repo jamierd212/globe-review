@@ -33,8 +33,11 @@ def load_spec():
 def cmd_check():
     spec = load_spec()
     bad = 0
+    skipped = [o["id"] for o in spec["outlets"] if o.get("excluded")]
     print(f"{'outlet':<14} {'kind':<8} {'status':<9} {'items':<6} {'dated':<6} url")
     for o in spec["outlets"]:
+        if o.get("excluded"):
+            continue
         for f in o["feeds"]:
             status, body, _ = feeds.fetch(f["url"])
             n = dated = 0
@@ -52,6 +55,9 @@ def cmd_check():
             print(f"{o['id']:<14} {f['kind']:<8} {str(status):<9} {n:<6} {dated:<6} "
                   f"{f['url']}{note}")
     print(f"\n{bad} feed(s) need attention.")
+    if skipped:
+        print(f"not collected (see the `excluded` note in outlets.json): "
+              f"{', '.join(skipped)}")
     print("Also worth knowing before you rely on position: a 'top' feed whose")
     print("items are strictly newest-first carries no editorial signal. Poll one")
     print("for a day and see whether the order ever changes without a new item.")

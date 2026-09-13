@@ -85,6 +85,21 @@ def test_schema_and_observation_roundtrip():
     assert con.execute("SELECT COUNT(*) c FROM feed").fetchone()["c"] == 1
     assert con.execute("SELECT name FROM outlet").fetchone()["name"] == "Sky News"
 
+def test_an_outlet_we_may_not_collect_never_enters_the_database():
+    """The Sun and the Times disallow us in robots.txt. The decision is
+    recorded in outlets.json rather than the rows deleted, so this checks the
+    exclusion is actually honoured instead of just documented."""
+    import json
+    spec = json.load(open(os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "outlets.json")))
+    excluded = {o["id"] for o in spec["outlets"] if o.get("excluded")}
+    assert excluded, "expected at least one excluded outlet"
+    con = db.connect(":memory:")
+    db.sync_outlets(con, spec)
+    got = {r["id"] for r in con.execute("SELECT id FROM outlet")}
+    assert not (got & excluded), got & excluded
+    assert got, "everything was excluded"
+
 if __name__ == "__main__":
     fails = 0
     for n, fn in sorted(globals().items()):
