@@ -6,3 +6,4 @@ __pycache__/
 # with gzipped monthly shards once the schema settles.
 data/*.sqlite-wal
 data/*.sqlite-shm
+data/cacert.pem
