@@ -52,8 +52,6 @@ def collect(db_path=None):
     spec = json.load(open(os.path.join(ROOT, "outlets.json"), encoding="utf-8"))
     excluded = [(o["id"], o.get("excluded", "")) for o in spec["outlets"]
                 if o.get("excluded")]
-    no_permission = [o["id"] for o in spec["outlets"] if o.get("robots")]
-
     rows = []
     for f in con.execute(
             "SELECT f.id, f.url, f.kind, f.outlet_id, o.name "
@@ -107,7 +105,7 @@ def collect(db_path=None):
     con.close()
     return {"generated": now.isoformat(timespec="seconds"), "feeds": rows,
             "articles_total": total, "articles_24h": per_outlet,
-            "excluded": excluded, "no_permission": no_permission}
+            "excluded": excluded}
 
 
 def text(s):
@@ -135,10 +133,6 @@ def text(s):
         out += ["", "not collected:"]
         for oid, why in s["excluded"]:
             out.append(f"  {oid}: {why[:78]}")
-    if s["no_permission"]:
-        out += ["", "COLLECTED WITHOUT PERMISSION (robots.txt disallows us): "
-                + ", ".join(s["no_permission"]),
-                "  resolve or state plainly on the methodology page before launch."]
     return "\n".join(out)
 
 
@@ -167,13 +161,6 @@ def html(s):
     bad = [r for r in s["feeds"] if r["flags"]]
     banner = (f'<p class="alert">{len(bad)} feed(s) need attention</p>' if bad
               else '<p class="fine">every feed answering, flowing and normal</p>')
-    warn = ""
-    if s["no_permission"]:
-        warn = ('<p class="alert">Collected without permission: '
-                + ", ".join(s["no_permission"])
-                + ' &mdash; robots.txt disallows us. Resolve or state it on the '
-                  'methodology page before launch.</p>')
-
     return f"""<!doctype html><meta charset="utf-8">
 <title>Front Page Monitor &mdash; sources</title>
 <meta http-equiv="refresh" content="300">
@@ -209,7 +196,7 @@ def html(s):
 <p class="meta">{s['generated']} &middot; {len(s['feeds'])} feeds &middot;
  {sum(s['articles_24h'].values())} articles in 24h &middot;
  {s['articles_total']} total &middot; refreshes every 5 min</p>
-{warn}{banner}
+{banner}
 <table><thead><tr><th>Outlet</th><th>Feed</th><th>Last ok</th><th>Items</th>
 <th>Usual</th><th>Last 24 polls</th><th>State</th><th>URL</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table>

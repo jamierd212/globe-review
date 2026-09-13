@@ -33,7 +33,16 @@ import math
 #
 # Both figures are starting points. Set them properly once feeds are running,
 # against the median story lifetime rather than by eye.
-THRESHOLDS = {"hashed": 0.20, "sentence": 0.62}
+# Measured on 642 real articles from 13 papers, 13 Sept 2026:
+#   0.14 -> 116 stories, the big national ones all correctly joined
+#           (Boris Johnson's train, 10 outlets), but some false merges
+#   0.20 ->  49 stories, cleaner, some real stories split in two
+#   0.28 ->  23 stories, too tight - only the very biggest survive
+# 0.16 is the compromise while the word-counting vectoriser is in use. The
+# false merges are its limit, not the threshold's: it cannot tell that a Sun
+# agony column and an FT piece share only common words. Sentence embeddings
+# are the fix, and the number will need setting again for them.
+THRESHOLDS = {"hashed": 0.16, "sentence": 0.62}
 THRESHOLD = THRESHOLDS["hashed"]
 
 # a story needs this many different papers before it goes on the globe
