@@ -42,7 +42,18 @@ import math
 # false merges are its limit, not the threshold's: it cannot tell that a Sun
 # agony column and an FT piece share only common words. Sentence embeddings
 # are the fix, and the number will need setting again for them.
-THRESHOLDS = {"hashed": 0.16, "sentence": 0.62}
+# Both measured on the same 633 real articles from 13 papers, 13 Sept 2026.
+#
+# Word counting at 0.16 gives 78 stories but splits Reform's donations into
+# two and produces plain false merges - a Gloucestershire council story with
+# an acid attack, the Great North Run with an AI safety story - because it
+# can only see shared words.
+#
+# Sentence embeddings at 0.58 give 55 stories, hold the whole Reform story
+# together at 28 articles across 10 papers, find coherent stories the word
+# counter missed entirely (Trump on Irish reunification, 11 articles from 9
+# papers), and show no false merges in the top of the list.
+THRESHOLDS = {"hashed": 0.16, "sentence": 0.58}
 THRESHOLD = THRESHOLDS["hashed"]
 
 # a story needs this many different papers before it goes on the globe

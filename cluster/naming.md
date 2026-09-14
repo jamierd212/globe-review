@@ -54,6 +54,18 @@ For "UK sanctions on Israeli settlements", the thing being judged is **the
 sanctions**. A paper cheering them is positive. A paper calling them a betrayal
 is negative. Write that down when the story is born and don't change it.
 
+### What it does now
+
+Until a model writes the names, a story is named after **the headline nearest
+the middle of the cluster** — the one most typical of what all the papers are
+running. It reads as a real sentence, and being the most central it is the
+least likely to carry any one paper's angle.
+
+It is still one paper's words, which is what the rule above says to avoid, so
+these are recorded as `generated` and are meant to be replaced. The first
+attempt took the words all the headlines had in common and produced "Trump"
+and "£36m donor Ben Delo: crypto king who thrown" — worse on every count.
+
 ### Where the wording comes from
 
 1. **Borrow it** from the standing subject the story is tagged with, where the

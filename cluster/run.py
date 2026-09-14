@@ -8,8 +8,9 @@ Runs after the poll. Groups the recent articles, matches each group against
 the stories already in the database so a story keeps its identity overnight,
 and writes the result back.
 
-Nothing here needs a model or a key. The vectoriser counts words; swap in
-sentence embeddings later and compare the two on the same day's articles.
+Uses the sentence model if it is installed and falls back to word counting if
+not, so it runs either way. Nothing leaves the machine and no key is needed.
+The similarity threshold differs between the two and is chosen to match.
 """
 
 import os
@@ -56,28 +57,48 @@ def load_stories(con):
     return out
 
 
-def name_story(members, articles):
-    """A placeholder name until a model writes a proper one.
+def name_story(members, articles, vecs_by_id=None):
+    """A readable name, until a model writes a better one.
 
-    Takes the words that most of the coverage agrees on, in the order the
-    longest headline uses them. Crude, but it takes the wording from what
-    everybody is saying rather than from one paper's framing, which is the
-    rule that matters. See naming.md.
+    Takes the headline nearest the middle of the cluster - the one that is most
+    typical of what everybody is running. That is a real sentence rather than
+    the bag of shared words the first version produced ("Trump", "£36m donor
+    Ben Delo: crypto king who thrown"), and being the most central headline it
+    is the least likely to carry any single paper's angle.
+
+    It is still one paper's words, which naming.md says to avoid, so these are
+    recorded as `generated` and meant to be replaced. See naming.md.
     """
     by_id = {a["id"]: a for a in articles}
-    titles = [by_id[m]["title"] for m in members if m in by_id]
-    if not titles:
+    rows = [(m, by_id[m]["title"]) for m in members if m in by_id]
+    if not rows:
         return "untitled"
-    sets = [set(embed.tokens(t)) for t in titles]
-    common = set.intersection(*sets) if len(sets) > 1 else sets[0]
-    common = {w for w in common if "_" not in w}
-    if not common:
-        common = max(sets, key=len)
-    longest = max(titles, key=len)
-    words = [w for w in longest.split() if
-             "".join(c for c in w.lower() if c.isalnum()) in common]
-    name = " ".join(words[:8]) or longest[:60]
-    return name[0].upper() + name[1:] if name else "untitled"
+    if vecs_by_id and len(rows) > 1:
+        dim = len(next(iter(vecs_by_id.values())))
+        cen = [0.0] * dim
+        for m, _ in rows:
+            v = vecs_by_id.get(m)
+            if v:
+                for i, x in enumerate(v):
+                    cen[i] += x
+        norm = sum(x * x for x in cen) ** 0.5 or 1.0
+        cen = [x / norm for x in cen]
+        best, best_sim = rows[0][1], -2.0
+        for m, title in rows:
+            v = vecs_by_id.get(m)
+            if not v:
+                continue
+            sim = sum(a * b for a, b in zip(v, cen))
+            if sim > best_sim:
+                best, best_sim = title, sim
+        title = best
+    else:
+        title = min(rows, key=lambda r: len(r[1]))[1]
+    # drop the trailing colon-clause papers use for their own billing
+    for sep in (" - ", " | "):
+        if sep in title:
+            title = title.split(sep)[0]
+    return title[:90].strip()
 
 
 def run(hours=WINDOW_HOURS, threshold=None, dry=False, db_path=None):
@@ -88,16 +109,20 @@ def run(hours=WINDOW_HOURS, threshold=None, dry=False, db_path=None):
         return 1
 
     texts = [(a["title"] + " " + (a["standfirst"] or "")).strip() for a in arts]
-    vecs = embed.embed_batch(texts)
+    vecs, how = embed.best_batch(texts)
+    vecs_by_id = {a["id"]: v for a, v in zip(arts, vecs)}
     items = [{"id": a["id"], "outlet_id": a["outlet_id"], "vec": v,
               "published_at": a["published_at"] or a["first_seen"]}
              for a, v in zip(arts, vecs)]
 
-    th = threshold if threshold is not None else G.THRESHOLD
+    # the threshold belongs to the vectoriser, not to the project
+    th = threshold if threshold is not None else G.THRESHOLDS[how]
     stories, pending = G.group(items, threshold=th)
     sp = G.spread(stories)
 
-    print(f"{len(arts)} articles in the last {hours}h")
+    print(f"{len(arts)} articles in the last {hours}h, vectorised by "
+          f"{'sentence model' if how == 'sentence' else 'word counting'} "
+          f"(threshold {th})")
     print(f"  {len(stories)} stories (2+ outlets), {len(pending)} still "
           f"single-outlet")
     if sp:
@@ -119,7 +144,7 @@ def run(hours=WINDOW_HOURS, threshold=None, dry=False, db_path=None):
     print("\nbiggest stories:")
     for s in stories[:12]:
         print(f"  {s['n']:>3} articles, {len(s['outlets']):>2} outlets  "
-              f"{name_story(s['members'], arts)[:62]}")
+              f"{name_story(s["members"], arts, vecs_by_id)[:62]}")
         print(f"       {', '.join(s['outlets'])}")
 
     if dry:
@@ -133,7 +158,7 @@ def run(hours=WINDOW_HOURS, threshold=None, dry=False, db_path=None):
             continue
         key = next((k for k, v in assigned.items() if v == st["id"]), None)
         grp = by_key.get(key)
-        name = name_story(grp["members"], arts) if grp else None
+        name = name_story(grp["members"], arts, vecs_by_id) if grp else None
         cen = ",".join(f"{x:.5f}" for x in st["centroid"]).encode()
         row = con.execute("SELECT id FROM story WHERE id=?", (st["id"],)).fetchone()
         if row:
