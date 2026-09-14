@@ -117,11 +117,20 @@ The page refreshes itself every five minutes and the hourly job rewrites it.
 - `cluster/group.py` forms the stories; `cluster/identity.py` keeps each one the
   same object overnight. Get the second wrong and it doesn't look like a bug —
   it looks like a very volatile news cycle.
-- Clustering runs with **nothing installed**. `cluster/embed.py` counts words
-  and word pairs, which is enough to group wire copy and follow-ups. Swap in
-  `sentence-transformers` later and compare properly — but **the similarity
-  threshold is different for each**, and copying the wrong one gives an empty
-  globe with no error.
+- Clustering uses **sentence embeddings** where they are installed and falls
+  back to counting words where they are not, so it runs on a bare machine. The
+  model runs locally: no key, and no article text leaves the laptop.
+
+  ```bash
+  python3 -m venv .venv && .venv/bin/pip install sentence-transformers
+  ```
+
+  Compared on the same 633 real articles: word counting split the Reform
+  donations story in two and merged a Gloucestershire council story with an
+  acid attack; the sentence model held Reform together at 28 articles across
+  10 papers and found coherent stories the word counter missed entirely. **The
+  similarity threshold differs between the two** — 0.16 against 0.58 — and the
+  code picks the one matching whichever vectoriser it used.
 
 ## The subject list runs ahead of the data on purpose
 

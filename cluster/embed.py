@@ -20,6 +20,7 @@ how long they live, not how good the clusters look by eye.
 
 import math
 import re
+import sys
 from collections import Counter
 
 DIM = 512
@@ -75,12 +76,42 @@ def embed_batch(texts, dim=DIM):
     return [hashed(t, w, dim) for t in texts]
 
 
-def sentence_batch(texts, model_name="all-MiniLM-L6-v2"):
-    """The real embedder. Runs locally; nothing is sent anywhere."""
+MODEL_NAME = "all-MiniLM-L6-v2"
+_MODEL = None
+
+
+def sentence_batch(texts, model_name=MODEL_NAME, batch_size=64):
+    """The real one. Runs locally on the machine; no article text is sent
+    anywhere, and no key is needed."""
     from sentence_transformers import SentenceTransformer   # noqa: local import
     global _MODEL
-    try:
-        _MODEL
-    except NameError:
+    if _MODEL is None:
         _MODEL = SentenceTransformer(model_name)
-    return [list(map(float, v)) for v in _MODEL.encode(texts, normalize_embeddings=True)]
+    return [list(map(float, v)) for v in
+            _MODEL.encode(texts, normalize_embeddings=True, batch_size=batch_size)]
+
+
+def available():
+    """Is the sentence model installed and loadable?"""
+    try:
+        import sentence_transformers          # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+def best_batch(texts, prefer_sentence=True):
+    """Vectors, and which method produced them.
+
+    Prefers the sentence model and quietly falls back to word counting, so the
+    pipeline runs on a machine with nothing installed. The caller needs to know
+    WHICH it got, because the similarity threshold is different for each and
+    using the wrong one gives an empty globe with no error.
+    """
+    if prefer_sentence and available():
+        try:
+            return sentence_batch(texts), "sentence"
+        except Exception as e:            # model missing from disk, no network
+            sys.stderr.write(f"sentence model unavailable ({type(e).__name__}), "
+                             f"falling back to word counting\n")
+    return embed_batch(texts), "hashed"
