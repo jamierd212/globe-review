@@ -8,3 +8,5 @@ data/*.sqlite-wal
 data/*.sqlite-shm
 data/cacert.pem
 .venv/
+.env
+.env.*

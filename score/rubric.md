@@ -39,9 +39,9 @@ this one error.
 - **Not agreement with facts.** A factually wrong piece that is warm toward the
   target is still positive.
 - **Not quality.** A badly written piece and a well written one score the same.
-- **Not the outlet's reputation.** Score what is in front of you. If the
-  *Guardian* runs a piece hostile to a target it usually supports, that is the
-  finding, not an error to be smoothed away.
+- **Not the outlet's reputation.** Score what is in front of you. A paper
+  running a piece hostile to a target it usually supports is the finding, not
+  an error to be smoothed away.
 
 ## Desk
 
@@ -51,9 +51,9 @@ URL path or section, not by inference from the writing.
 Do **not** adjust the score for the desk. A leader is allowed to be −2; a news
 piece is allowed to be −2. Whether a paper's position lives in its news pages
 or its comment pages is one of the things this instrument exists to measure,
-and adjusting for it would erase the answer. The real Express sample scored
-news at −1.6 against comment at −1.3, the opposite of what the prototype
-assumed.
+and adjusting for it would erase the answer. In the real sample behind this
+rubric, one popular title scored its **news** at −1.6 against its **comment**
+at −1.3 — the opposite way round from what the prototype assumed.
 
 ## Confidence
 
@@ -100,6 +100,13 @@ real one once it reaches the archive.
 | "Militant medics hold patients to ransom again" | nhs-pay → the pay claims | **−2** | "Militant", "ransom". |
 
 ## Scoring blind
+
+**No paper is named anywhere in this file, deliberately.** The worked examples
+above are real cases with the masthead removed. This document is fed to the
+model verbatim as its instructions, so a sentence naming a paper and how it
+usually scores would hand the model a prior to apply instead of reading the
+words in front of it — and the score would become partly a guess from the
+masthead. There is a test that fails if a paper's name appears here.
 
 The scorer never sees the outlet name, the taxonomy's `expect` field, or any
 previous score for the same story. `expect` is a prior held for testing only —

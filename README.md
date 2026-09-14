@@ -61,6 +61,8 @@ trusting any number downstream.
 | `cluster/naming.md` | how a story gets named, and how it records what it is about |
 | `score/rubric.md` | the scoring instruction: scale, desk handling, confidence, abstention, worked examples |
 | `score/direction.py` | the direction check — asserts the sign of left-minus-right on the subjects that are not in doubt |
+| `score/prompt.py` | builds the model's instructions from the rubric, so they cannot drift |
+| `score/run.py` | `tag` (file a story under a subject) then `score` (produce the colour) |
 | `score/gold.py` | the gold set: `draw`, `label`, `agree`, `check` |
 | `score/sample.py` | picks what to label — equal share per paper, not random |
 | `score/agreement.py` | how much two labellers agree, corrected for chance |
@@ -86,6 +88,27 @@ From 930 articles across 13 papers, collected 13 Sept 2026:
   measure syndication without the body.
 - **Stories form sensibly.** The Johnson train story pulled 12 articles from 10
   papers; Reform 11 from 8; a police appeal 9 from 7.
+
+## Scoring
+
+```bash
+echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env     # gitignored
+.venv/bin/python -m score.run tag              # file each story under a subject
+.venv/bin/python -m score.run score --dry      # what will it cost?
+.venv/bin/python -m score.run score
+```
+
+Only the headline and standfirst are ever sent — never the body, even where we
+have it, because every paper has to be scored on the same instrument and three
+of the nationals give us nothing else.
+
+`tag` is also the filter. Sport, showbiz and service journalism come back as
+"none of these" and never reach the globe.
+
+**Cost, measured rather than guessed** on 300 real articles: $0.64 at list
+price, $0.32 batched, about **$0.21 with prompt caching**, which is on. The
+rubric is 1,600 tokens and identical on every call, so it was three quarters
+of the bill until it was cached.
 
 ## Watching the sources
 
