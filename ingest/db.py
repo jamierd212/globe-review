@@ -106,6 +106,31 @@ CREATE TABLE IF NOT EXISTS story_member (
 );
 CREATE INDEX IF NOT EXISTS ix_member_story ON story_member (story_id);
 
+-- One row per article per issue. The unit is the (issue, target) pair, not the
+-- article: a piece about a returns agreement is favourable toward the Home
+-- Office and hostile toward the people being returned, and one number for it
+-- would mean nothing.
+--
+-- rubric_version and model are stamped on every row because a change to either
+-- means the archive was produced by two different instruments, and playback
+-- has to be able to mark that boundary rather than smooth over it.
+CREATE TABLE IF NOT EXISTS article_score (
+  article_id     INTEGER NOT NULL REFERENCES article(id),
+  issue_id       TEXT,                -- taxonomy id, or NULL for a story-only target
+  story_id       INTEGER REFERENCES story(id),
+  stance         REAL,                -- -2..2, or NULL for an abstention
+  tone           REAL,
+  confidence     TEXT,                -- high | medium | low
+  quote          TEXT,                -- verbatim span, or NULL
+  desk           TEXT,
+  reason         TEXT,
+  rubric_version TEXT NOT NULL,
+  model          TEXT NOT NULL,
+  scored_at      TEXT NOT NULL,
+  PRIMARY KEY (article_id, issue_id)
+);
+CREATE INDEX IF NOT EXISTS ix_score_story ON article_score (story_id);
+
 -- near-duplicate clusters: the same agency copy under different mastheads
 CREATE TABLE IF NOT EXISTS dup_member (
   article_id INTEGER PRIMARY KEY REFERENCES article(id),
