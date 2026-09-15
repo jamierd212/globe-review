@@ -13,7 +13,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
-from . import db, feeds, dedup
+from . import db, feeds, dedup, newsy
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SPEC = os.path.join(ROOT, "outlets.json")
@@ -136,9 +136,13 @@ def cmd_report(db_path=None, days=1, out=None):
     cutoff = con.execute(
         "SELECT datetime('now', ?)", (f"-{days} day",)).fetchone()[0]
 
-    rows = [dict(r) for r in con.execute(
+    allrows = [dict(r) for r in con.execute(
         "SELECT a.id, a.outlet_id, a.url_canon, a.title FROM article a "
         "WHERE a.first_seen >= ?", (cutoff,))]
+    # Sport and showbiz are not news and are counted nowhere. They are still
+    # collected, because the filter could be wrong and an article we never
+    # stored is gone, but nothing downstream sees them.
+    rows, notnews = newsy.split(allrows)
     groups, method = dedup.group(rows)
 
     con.executemany(
@@ -171,7 +175,8 @@ def cmd_report(db_path=None, days=1, out=None):
         lines.append(f"{oid},{p['n']},{p['dup']},{share:.4f}")
 
     overall = dedup.duplication_rate(groups)
-    print(f"\n{len(rows)} articles in the last {days}d across {len(per)} outlets")
+    print(f"\n{len(rows)} news articles in the last {days}d across {len(per)} outlets")
+    print(f"({len(notnews)} sport/showbiz/lifestyle items collected and excluded)")
     print(f"agency-copy duplication: {overall:.0%} of items are a repeat of "
           f"something already seen elsewhere")
     if stale:

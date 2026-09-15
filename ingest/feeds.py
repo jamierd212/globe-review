@@ -7,10 +7,12 @@ link, summary, date, guid, and crucially ORDER - is not the part feedparser is
 good at.
 """
 
+import gzip
 import re
 import urllib.request
 import urllib.error
 import xml.etree.ElementTree as ET
+import zlib
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
@@ -132,6 +134,30 @@ def parse(xml_bytes):
     return items
 
 
+def decompress(body, headers):
+    """Some feeds send gzip whether or not you asked for it.
+
+    The Independent started doing this between two polls. The body arrives as
+    valid gzip, the XML parser chokes, and without the magic-byte check below
+    it looks exactly like a malformed feed. Trust the bytes rather than the
+    Content-Encoding header, because the outlet that caused this did not set
+    one.
+    """
+    if not body:
+        return body
+    try:
+        if body[:2] == b"\x1f\x8b":
+            return gzip.decompress(body)
+        enc = (headers.get("Content-Encoding") or "").lower()
+        if "gzip" in enc:
+            return gzip.decompress(body)
+        if "deflate" in enc:
+            return zlib.decompress(body, -zlib.MAX_WBITS)
+    except Exception:
+        return body          # let the parser report it rather than hiding it
+    return body
+
+
 def fetch(url, etag=None, modified=None):
     """Returns (status, body_bytes, headers). Never raises: a dead feed is a
     row in the poll table, not a crashed job."""
@@ -145,7 +171,8 @@ def fetch(url, etag=None, modified=None):
         req.add_header("If-Modified-Since", modified)
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-            return r.status, r.read(8_000_000), dict(r.headers)
+            h = dict(r.headers)
+            return r.status, decompress(r.read(8_000_000), h), h
     except urllib.error.HTTPError as e:
         return e.code, b"", dict(getattr(e, "headers", {}) or {})
     except Exception as e:
