@@ -8,6 +8,7 @@
 before you trust a single number that comes out of the other two.
 """
 
+import hashlib
 import json
 import os
 import sys
@@ -73,7 +74,8 @@ def cmd_poll(db_path=None):
     stamp = now()
     totals = {"feeds": 0, "items": 0, "new": 0, "failed": 0}
 
-    for row in con.execute("SELECT id, outlet_id, url FROM feed ORDER BY id"):
+    for row in con.execute("SELECT id, outlet_id, url FROM feed "
+                           "WHERE active = 1 ORDER BY id"):
         feed_id, outlet_id, url = row["id"], row["outlet_id"], row["url"]
         status, body, _ = feeds.fetch(url)
         items, err = [], None
@@ -85,9 +87,13 @@ def cmd_poll(db_path=None):
         elif status != 304:
             err = f"http {status}"
 
+        fingerprint = hashlib.sha1(
+            "|".join(i["url_canon"] for i in items).encode()).hexdigest()[:16] \
+            if items else None
         cur = con.execute(
-            "INSERT INTO poll (feed_id, polled_at, http_status, n_items, error) "
-            "VALUES (?,?,?,?,?)", (feed_id, stamp, str(status), len(items), err))
+            "INSERT INTO poll (feed_id, polled_at, http_status, n_items, "
+            "items_hash, error) VALUES (?,?,?,?,?,?)",
+            (feed_id, stamp, str(status), len(items), fingerprint, err))
         poll_id = cur.lastrowid
         totals["feeds"] += 1
         if err:

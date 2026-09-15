@@ -115,16 +115,19 @@ def test_status_spots_a_feed_that_has_gone_quiet():
     now = datetime.now(timezone.utc)
     for h in range(48, -1, -1):
         t = (now - timedelta(hours=h)).isoformat(timespec="seconds")
-        # live: answers and brings new articles
-        con.execute("INSERT INTO poll (feed_id,polled_at,http_status,n_items,n_new)"
-                    " VALUES (?,?,?,?,?)", (ids["https://a/live"], t, "200", 20, 2))
-        # frozen: answers with the same items forever
-        con.execute("INSERT INTO poll (feed_id,polled_at,http_status,n_items,n_new)"
-                    " VALUES (?,?,?,?,?)", (ids["https://a/frozen"], t, "200", 20, 0))
+        # live: its contents change every hour
+        con.execute("INSERT INTO poll (feed_id,polled_at,http_status,n_items,n_new,items_hash)"
+                    " VALUES (?,?,?,?,?,?)",
+                    (ids["https://a/live"], t, "200", 20, 2, f"hash{h}"))
+        # frozen: answers with exactly the same items forever
+        con.execute("INSERT INTO poll (feed_id,polled_at,http_status,n_items,n_new,items_hash)"
+                    " VALUES (?,?,?,?,?,?)",
+                    (ids["https://a/frozen"], t, "200", 20, 0, "same"))
         # dead: stopped answering a day ago
         if h > 24:
-            con.execute("INSERT INTO poll (feed_id,polled_at,http_status,n_items,n_new)"
-                        " VALUES (?,?,?,?,?)", (ids["https://a/dead"], t, "200", 20, 1))
+            con.execute("INSERT INTO poll (feed_id,polled_at,http_status,n_items,n_new,items_hash)"
+                        " VALUES (?,?,?,?,?,?)",
+                        (ids["https://a/dead"], t, "200", 20, 1, f"hash{h}"))
     con.commit()
     import tempfile, os as _os
     path = _os.path.join(tempfile.mkdtemp(), "t.sqlite")
@@ -183,6 +186,59 @@ def test_a_brand_new_feed_is_not_called_frozen():
     disk = db.connect(path); con.backup(disk); disk.commit(); disk.close()
     s = status.collect(path)
     assert s["feeds"][0]["flags"] == [], s["feeds"][0]["flags"]
+
+GNEWS = b"""<?xml version="1.0"?><rss version="2.0"><channel>
+<item><title>Farage vows to hit Labour funding if donations are capped - The Sun</title>
+<link>https://news.google.com/rss/articles/CBMiabc</link>
+<description>&lt;a href="x"&gt;Farage vows to hit Labour funding if donations are capped&lt;/a&gt;&amp;nbsp;&amp;nbsp;The Sun</description>
+<pubDate>Tue, 15 Sep 2026 13:05:00 GMT</pubDate>
+<source url="https://www.thesun.co.uk">The Sun</source></item>
+<item><title>Politics | UK</title><link>https://news.google.com/rss/articles/CBMinav</link>
+<pubDate>Tue, 15 Sep 2026 13:05:00 GMT</pubDate>
+<source url="https://www.thetimes.com">The Times</source></item>
+</channel></rss>"""
+
+def test_google_news_items_are_tidied():
+    """Items arriving via Google carry a ' - The Sun' suffix, a description
+    that is just the headline again, and Google's own section cards mixed in
+    with the articles."""
+    items = feeds.parse(GNEWS)
+    assert len(items) == 1, [i["title"] for i in items]   # the nav card is gone
+    a = items[0]
+    assert a["title"] == "Farage vows to hit Labour funding if donations are capped"
+    assert a["standfirst"] is None, a["standfirst"]       # not the headline again
+    assert a["source_name"] == "The Sun"
+    assert a["source_url"] == "https://www.thesun.co.uk"
+
+def test_a_short_headline_from_a_normal_feed_is_kept():
+    """The nav-card rule must only apply to Google items - real feeds carry
+    short headlines and dropping them would lose real articles."""
+    short = RSS.replace(b"Fury as Home Office plans new site", b"Budget day")
+    assert any(i["title"] == "Budget day" for i in feeds.parse(short))
+
+def test_a_section_feed_that_never_brings_anything_new_is_not_frozen():
+    """The rule that first got this wrong. A section feed whose articles reach
+    us through the top feed first shows n_new = 0 forever and is perfectly
+    healthy - what matters is whether the feed's own contents change."""
+    from ingest import status
+    from datetime import datetime, timezone, timedelta
+    import tempfile, os as _os
+    con = db.connect(":memory:")
+    db.sync_outlets(con, {"outlets": [{"id": "ind", "name": "Independent",
+        "leaning": -0.4, "market": 0.3, "weight": 0.9,
+        "feeds": [{"url": "https://a/section", "kind": "section"}]}]})
+    fid = con.execute("SELECT id FROM feed").fetchone()["id"]
+    now = datetime.now(timezone.utc)
+    for h in range(40, -1, -1):
+        con.execute("INSERT INTO poll (feed_id,polled_at,http_status,n_items,n_new,items_hash)"
+                    " VALUES (?,?,?,?,?,?)",
+                    (fid, (now - timedelta(hours=h)).isoformat(timespec="seconds"),
+                     "200", 14, 0, f"changes{h}"))   # contents change, nothing NEW to us
+    con.commit()
+    path = _os.path.join(tempfile.mkdtemp(), "t.sqlite")
+    disk = db.connect(path); con.backup(disk); disk.commit(); disk.close()
+    assert status.collect(path)["feeds"][0]["flags"] == [], \
+        status.collect(path)["feeds"][0]["flags"]
 
 if __name__ == "__main__":
     fails = 0

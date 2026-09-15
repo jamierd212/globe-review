@@ -55,13 +55,27 @@ def collect(db_path=None):
     rows = []
     for f in con.execute(
             "SELECT f.id, f.url, f.kind, f.outlet_id, o.name "
-            "FROM feed f JOIN outlet o ON o.id = f.outlet_id ORDER BY o.name, f.kind"):
+            "FROM feed f JOIN outlet o ON o.id = f.outlet_id "
+            "WHERE f.active = 1 ORDER BY o.name, f.kind"):
         polls = [dict(p) for p in con.execute(
-            "SELECT polled_at, http_status, n_items, n_new, error FROM poll "
+            "SELECT polled_at, http_status, n_items, n_new, items_hash, error FROM poll "
             "WHERE feed_id=? ORDER BY polled_at DESC LIMIT 60", (f["id"],))]
         ok = [p for p in polls if not p["error"] and p["n_items"] > 0]
         last_ok = ok[0]["polled_at"] if ok else None
-        last_new = next((p["polled_at"] for p in polls if p["n_new"] > 0), None)
+        # when did this feed's own contents last change? Not when we last saw
+        # an article we had never seen - a section feed whose stories arrive
+        # through the top feed first shows zero new forever and is healthy.
+        last_changed = None
+        if ok:
+            newest = ok[0]["items_hash"]
+            last_changed = ok[0]["polled_at"]
+            for p in ok[1:]:
+                if p["items_hash"] != newest:
+                    break
+                last_changed = p["polled_at"]
+            if all(p["items_hash"] == newest for p in ok) and len(ok) > 1:
+                last_changed = None          # never seen it change
+        last_new = last_changed
 
         # what this feed normally produces, from its own history
         counts = [p["n_items"] for p in ok]
@@ -89,7 +103,10 @@ def collect(db_path=None):
             flags.append("NOT ANSWERING")
         elif typical and latest < typical * THIN:
             flags.append("THIN")
-        if looks >= 3 and (h_new is None or h_new > FROZEN_HOURS):
+        # needs both: enough looks, and enough elapsed time to judge over
+        span = _hours_since(ok[-1]["polled_at"], now) if ok else 0
+        if looks >= 3 and (span or 0) >= FROZEN_HOURS \
+                and (h_new is None or h_new > FROZEN_HOURS):
             flags.append("FROZEN")
 
         rows.append({
