@@ -105,10 +105,28 @@ of the nationals give us nothing else.
 `tag` is also the filter. Sport, showbiz and service journalism come back as
 "none of these" and never reach the globe.
 
-**Cost, measured rather than guessed** on 300 real articles: $0.64 at list
-price, $0.32 batched, about **$0.21 with prompt caching**, which is on. The
-rubric is 1,600 tokens and identical on every call, so it was three quarters
-of the bill until it was cached.
+**Cost, measured on a real run** of 621 articles: **$1.39**, against an
+estimate of about $0.45. The gap was prompt caching silently doing nothing.
+
+The rubric is identical on every call and is most of the bill, so caching it
+is the obvious saving. The API accepts `cache_control` on a block below the
+minimum size and ignores it — no error, no warning. Measured by sending the
+same block at three sizes:
+
+| block | first call | second call |
+|---|---|---|
+| ~2.4k tokens | no cache written | no cache read |
+| ~7k | 7,288 written | 7,288 read |
+| ~14k | 14,575 written | 14,575 read |
+
+So Haiku's minimum is **4,096 tokens** and this rubric is 2,439. Padding it to
+reach the threshold would work, but only if the extra 1,700 tokens are worth
+saying — filler to win a discount makes the instrument worse to make it
+cheaper.
+
+Use `--batch` instead: half price, no minimum, no effect on the prompt, and an
+hourly job does not care about latency. About **$12 a month** at current
+volumes.
 
 ## Watching the sources
 
