@@ -19,7 +19,7 @@ from datetime import datetime, timezone, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ingest import db                                    # noqa: E402
+from ingest import db, newsy                             # noqa: E402
 from cluster import embed, group as G, identity as I     # noqa: E402
 
 WINDOW_HOURS = 72
@@ -37,7 +37,7 @@ def load_articles(con, hours):
     cut = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(
         timespec="seconds")
     return [dict(r) for r in con.execute(
-        "SELECT id, outlet_id, title, standfirst, published_at, first_seen "
+        "SELECT id, outlet_id, title, standfirst, published_at, first_seen, url_canon "
         "FROM article WHERE COALESCE(published_at, first_seen) >= ? "
         "ORDER BY COALESCE(published_at, first_seen)", (cut,))]
 
@@ -106,6 +106,20 @@ def run(hours=WINDOW_HOURS, threshold=None, dry=False, db_path=None):
     arts = load_articles(con, hours)
     if not arts:
         print("no articles in that window - run `python3 -m ingest.run poll` first")
+        return 1
+
+    # Sport and showbiz come out before clustering, not after. On the first
+    # day's data the biggest cluster was a Man Utd match at 42 articles, and
+    # 78% of the first tagging run was spent on stories that were then thrown
+    # away. The paper's own URL section is the signal; anything ambiguous is
+    # kept, because letting sport through costs pennies and dropping real news
+    # loses it.
+    arts, dropped = newsy.split(arts)
+    if dropped:
+        print(f"set aside {len(dropped)} sport/showbiz/lifestyle items "
+              f"({len(dropped) / (len(arts) + len(dropped)):.0%})")
+    if not arts:
+        print("nothing left after filtering")
         return 1
 
     texts = [(a["title"] + " " + (a["standfirst"] or "")).strip() for a in arts]
