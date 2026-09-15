@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS feed (
   outlet_id TEXT NOT NULL REFERENCES outlet(id),
   url       TEXT NOT NULL UNIQUE,
   kind      TEXT NOT NULL,     -- 'top' (curated front page) | 'section'
-  curated   INTEGER            -- 1/0/NULL-unknown: does position mean anything?
+  curated   INTEGER,           -- 1/0/NULL-unknown: does position mean anything?
+  active    INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS article (
@@ -58,6 +59,11 @@ CREATE TABLE IF NOT EXISTS poll (
   http_status TEXT,            -- code, or the exception name
   n_items     INTEGER NOT NULL DEFAULT 0,
   n_new       INTEGER NOT NULL DEFAULT 0,
+  -- fingerprint of the feed's contents. n_new cannot tell a frozen feed from a
+  -- healthy section feed whose articles reached us through the top feed first:
+  -- that one shows zero new forever and is perfectly fine. What matters is
+  -- whether the feed itself changed.
+  items_hash  TEXT,
   error       TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_poll_feed ON poll (feed_id, polled_at);
@@ -144,6 +150,23 @@ DEFAULT_DB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
                           "data", "ingest.sqlite")
 
 
+# Columns added after the first database was created. CREATE TABLE IF NOT
+# EXISTS will not add them, and the archive is the one thing here that cannot
+# be rebuilt, so the table is altered in place rather than recreated.
+MIGRATIONS = [
+    ("feed", "active", "INTEGER NOT NULL DEFAULT 1"),
+    ("poll", "items_hash", "TEXT"),
+]
+
+
+def migrate(con):
+    for table, column, decl in MIGRATIONS:
+        have = {r["name"] for r in con.execute(f"PRAGMA table_info({table})")}
+        if have and column not in have:
+            con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    con.commit()
+
+
 def connect(path=None):
     path = path or DEFAULT_DB
     if path != ":memory:":
@@ -151,16 +174,20 @@ def connect(path=None):
     con = sqlite3.connect(path)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
+    migrate(con)
     return con
 
 
 def sync_outlets(con, spec):
     """Bring outlet and feed rows into line with outlets.json.
 
-    Feeds are never deleted, only added: a feed that disappears from the config
-    still has history attached to it, and dropping the row would orphan every
-    observation made through it.
+    A feed dropped from the config is retired, not deleted: its history is
+    still attached to it and deleting the row would orphan every observation
+    made through it. Retired feeds are not polled and not reported on, so a
+    source we have deliberately stopped using does not sit on the dashboard
+    in red forever.
     """
+    seen = set()
     for o in spec["outlets"]:
         # an outlet we are not allowed to collect is not put in the database at
         # all, so nothing downstream can quietly start counting it
@@ -178,4 +205,8 @@ def sync_outlets(con, spec):
                 "ON CONFLICT(url) DO UPDATE SET kind=excluded.kind, curated=excluded.curated",
                 (o["id"], f["url"], f["kind"],
                  None if cur is None else int(bool(cur))))
+            seen.add(f["url"])
+    if seen:
+        marks = ",".join("?" * len(seen))
+        con.execute(f"UPDATE feed SET active = (url IN ({marks}))", tuple(seen))
     con.commit()

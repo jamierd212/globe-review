@@ -11,7 +11,12 @@
     "kind: 'top' feeds are the curated front-page selection and are the ones the",
     "dwell measure reads. If a top feed turns out to be strictly newest-first,",
     "mark curated:false - its position tells you nothing and salience for that",
-    "outlet falls back to counts."
+    "outlet falls back to counts.",
+    "",
+    "Two outlets come via Google News rather than their own feeds - see their",
+    "`via` note. They are marked salience: counts-only, because a Google",
+    "result carries no front-page position and never will. Nothing should",
+    "later mistake them for having one."
   ],
   "outlets": [
     {
@@ -132,13 +137,26 @@
       "archive_url": "thetimes.co.uk",
       "feeds": [
         {
-          "url": "https://www.thetimes.com/uk/rss",
-          "kind": "top",
-          "curated": null,
-          "verified": false
+          "url": "https://news.google.com/rss/search?q=site:thetimes.com/uk+when:1d&hl=en-GB&gl=GB&ceid=GB:en",
+          "kind": "section",
+          "curated": false,
+          "source": "google-news"
+        },
+        {
+          "url": "https://news.google.com/rss/search?q=site:thetimes.com/uk/politics+when:1d&hl=en-GB&gl=GB&ceid=GB:en",
+          "kind": "section",
+          "curated": false,
+          "source": "google-news"
+        },
+        {
+          "url": "https://news.google.com/rss/search?q=site:thetimes.com/comment+when:1d&hl=en-GB&gl=GB&ceid=GB:en",
+          "kind": "section",
+          "curated": false,
+          "source": "google-news"
         }
       ],
-      "excluded": "no working RSS endpoint - every candidate URL returns 404 or the HTML page. Permission is moot until there is something to fetch."
+      "via": "via Google News. The paper blocks us directly with a device-verification challenge, so this is Google's syndicated copy rather than their feed. Two consequences, both deliberate: there is no feed position, so this outlet is counts-only for salience and can never carry a prominence or dwell figure; and Google supplies no standfirst, so items are scored on the headline alone and will carry lower confidence.",
+      "salience": "counts-only"
     },
     {
       "id": "mail",
@@ -198,19 +216,14 @@
       "archive_url": "thesun.co.uk",
       "feeds": [
         {
-          "url": "https://www.thesun.co.uk/feed/",
-          "kind": "top",
-          "curated": null,
-          "verified": true,
-          "items_seen": 27
-        },
-        {
-          "url": "https://www.thesun.co.uk/news/feed/",
+          "url": "https://news.google.com/rss/search?q=site:thesun.co.uk/news+when:1d&hl=en-GB&gl=GB&ceid=GB:en",
           "kind": "section",
-          "verified": true,
-          "items_seen": 30
+          "curated": false,
+          "source": "google-news"
         }
-      ]
+      ],
+      "via": "via Google News. The paper blocks us directly with a device-verification challenge, so this is Google's syndicated copy rather than their feed. Two consequences, both deliberate: there is no feed position, so this outlet is counts-only for salience and can never carry a prominence or dwell figure; and Google supplies no standfirst, so items are scored on the headline alone and will carry lower confidence.",
+      "salience": "counts-only"
     },
     {
       "id": "mirror",

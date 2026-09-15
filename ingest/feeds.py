@@ -123,6 +123,34 @@ def parse(xml_bytes):
         date = parse_date(_text(n, "pubDate", f"{ATOM}published",
                                 f"{ATOM}updated", f"{DC}date"))
         guid = (_text(n, "guid", f"{ATOM}id") or "").strip() or None
+
+        # Google News wraps other people's journalism: the link is a Google
+        # redirect, <source> names the paper, and the title carries a
+        # " - The Sun" suffix. Tidy those here so nothing downstream has to
+        # know where an item came from.
+        src = n.find("source")
+        source_url = source_name = None
+        if src is not None:
+            source_url = src.get("url")
+            source_name = (src.text or "").strip() or None
+        if source_name:
+            for sep in (" - ", " | ", " \u2013 "):
+                if title.endswith(sep + source_name):
+                    title = title[: -len(sep + source_name)].strip()
+                    break
+        # Google's description is the headline again; an empty standfirst is
+        # more honest than a duplicated one, and the rubric treats a missing
+        # standfirst as lower confidence rather than pretending otherwise.
+        if summary and title and summary.startswith(title[:40]):
+            summary = ""
+
+        # Google News mixes its own section cards in with the articles - bare
+        # labels like "UK", "Crime", "Politics | UK". A headline is a sentence;
+        # these are not, and they would otherwise become stories of their own.
+        if source_name and (len(title) < 25 or len(title.split()) < 4
+                            or " | " in title):
+            continue
+
         items.append({
             "title": title,
             "url": link,
@@ -130,6 +158,8 @@ def parse(xml_bytes):
             "standfirst": summary or None,
             "published_at": date,
             "guid": guid,
+            "source_url": source_url,
+            "source_name": source_name,
         })
     return items
 
