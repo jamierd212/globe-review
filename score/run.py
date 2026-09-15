@@ -2,6 +2,7 @@
 
     python3 -m score.run tag              file each story under a subject
     python3 -m score.run score            score the articles in those stories
+    python3 -m score.run score --batch     same thing at half price
     python3 -m score.run score --limit 40 --dry     estimate the cost first
 
 Two model steps, in this order:
@@ -76,24 +77,35 @@ def parse_json(text):
     return None
 
 
+# Prompt caching is NOT on, and the marker has been removed rather than left
+# in looking like it works.
+#
+# The rubric is identical on every call and is most of the bill, so caching it
+# is the obvious saving. It silently did nothing. Measured directly by sending
+# the same block at three sizes and watching the usage figures:
+#
+#     ~2.4k tokens   cache_write 0      cache_read 0        <- ignored
+#     ~7k            cache_write 7,288  then read 7,288     <- works
+#     ~14k           cache_write 14,575 then read 14,575    <- works
+#
+# So Haiku's minimum cacheable block is 4,096 tokens and this rubric is 2,439.
+# The API accepts cache_control below that and ignores it - no error, no
+# warning, and a bill three times the estimate. Padding the rubric to reach
+# the threshold would work, but only if the extra 1,700 tokens are genuinely
+# worth saying; filler to win a discount would be making the instrument worse
+# to make it cheaper.
+#
+# The Batch API halves the cost instead, with no minimum and no effect on the
+# prompt, and an hourly job does not care about latency.
 def ask(cli, system, user, max_tokens=300, retries=4):
-    """The rubric is ~1,600 tokens and identical on every call, which would be
-    three quarters of the bill. Marking it cached means it is charged once per
-    five minutes instead of once per article: measured on 300 articles, $0.64
-    becomes about $0.21."""
-    blocks = [{"type": "text", "text": system,
-               "cache_control": {"type": "ephemeral"}}]
+    blocks = [{"type": "text", "text": system}]
     for attempt in range(retries):
         try:
             r = cli.messages.create(
                 model=MODEL, max_tokens=max_tokens, system=blocks,
                 messages=[{"role": "user", "content": user}])
             txt = "".join(b.text for b in r.content if getattr(b, "type", "") == "text")
-            u = r.usage
-            billed_in = (u.input_tokens
-                         + getattr(u, "cache_read_input_tokens", 0) * 0.1
-                         + getattr(u, "cache_creation_input_tokens", 0) * 1.25)
-            return parse_json(txt), billed_in, u.output_tokens
+            return parse_json(txt), r.usage.input_tokens, r.usage.output_tokens
         except Exception as e:
             if attempt == retries - 1:
                 sys.stderr.write(f"  gave up: {type(e).__name__}: {e}\n")
@@ -159,7 +171,7 @@ def cmd_tag(limit=None, dry=False, db_path=None):
 
 # ------------------------------------------------------------------ score ---
 
-def cmd_score(limit=None, dry=False, db_path=None):
+def cmd_score(limit=None, dry=False, db_path=None, batch=False):
     con = db.connect(db_path)
     ver = P.rubric_version()
     todo = [dict(r) for r in con.execute(
@@ -194,6 +206,8 @@ def cmd_score(limit=None, dry=False, db_path=None):
 
     cli = client()
     system = P.system_prompt()
+    if batch:
+        return score_batched(cli, todo, system, ver, con)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     tin = tout = 0
     kept = abstained = failed = 0
@@ -232,6 +246,78 @@ def cmd_score(limit=None, dry=False, db_path=None):
     return 0
 
 
+# ------------------------------------------------------------------ batch ---
+
+def score_batched(cli, todo, system, ver, con, poll_every=20):
+    """The same scoring, sent as one batch at half price.
+
+    An hourly job does not care whether an answer comes back in two seconds or
+    twenty minutes, and halving the bill is the difference between this costing
+    $24 a month and $12.
+    """
+    import time as _t
+    from datetime import datetime as _dt, timezone as _tz
+
+    reqs = []
+    for t in todo:
+        reqs.append({
+            "custom_id": f"a{t['id']}",
+            "params": {
+                "model": MODEL, "max_tokens": 300,
+                "system": [{"type": "text", "text": system}],
+                "messages": [{"role": "user", "content": P.item_prompt(
+                    t["title"], t["standfirst"], t["issue_id"] or t["story"],
+                    t["target"], desk_from_url(t["url_canon"]))}],
+            },
+        })
+
+    print(f"sending {len(reqs)} in one batch")
+    batch = cli.messages.batches.create(requests=reqs)
+    print(f"  batch {batch.id}")
+    while True:
+        b = cli.messages.batches.retrieve(batch.id)
+        c = b.request_counts
+        if b.processing_status == "ended":
+            break
+        print(f"  {c.succeeded} done, {c.processing} running, {c.errored} errored")
+        _t.sleep(poll_every)
+
+    by_id = {f"a{t['id']}": t for t in todo}
+    now = _dt.now(_tz.utc).isoformat(timespec="seconds")
+    kept = abstained = failed = 0
+    tin = tout = 0
+    for res in cli.messages.batches.results(batch.id):
+        t = by_id.get(res.custom_id)
+        if t is None or res.result.type != "succeeded":
+            failed += 1
+            continue
+        msg = res.result.message
+        txt = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+        out = parse_json(txt)
+        tin += msg.usage.input_tokens
+        tout += msg.usage.output_tokens
+        if out is None:
+            failed += 1
+            continue
+        stance = out.get("stance")
+        kept += stance is not None
+        abstained += stance is None
+        con.execute(
+            "INSERT INTO article_score (article_id, issue_id, story_id, stance, "
+            "tone, confidence, quote, desk, reason, rubric_version, model, scored_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(article_id, issue_id) "
+            "DO UPDATE SET stance=excluded.stance, tone=excluded.tone, "
+            "confidence=excluded.confidence, quote=excluded.quote, "
+            "reason=excluded.reason, scored_at=excluded.scored_at",
+            (t["id"], t["issue_id"], t["story_id"], stance, out.get("tone"),
+             out.get("confidence"), out.get("quote"),
+             desk_from_url(t["url_canon"]), out.get("reason"), ver, MODEL, now))
+    con.commit()
+    print(f"\n{kept} scored, {abstained} abstained, {failed} failed")
+    print(f"{tin + tout:,} tokens, ${money(tin, tout) / 2:.2f} at batch price")
+    return 0
+
+
 DESKS = [("comment", r"/(comment|opinion|columnists?|voices)/"),
          ("leader",  r"/(leader|editorial)s?/"),
          ("analysis", r"/(analysis|explainer|long-read)/"),
@@ -255,5 +341,5 @@ if __name__ == "__main__":
     if cmd == "tag":
         sys.exit(cmd_tag(limit=lim, dry=dry))
     if cmd == "score":
-        sys.exit(cmd_score(limit=lim, dry=dry))
+        sys.exit(cmd_score(limit=lim, dry=dry, batch="--batch" in a))
     sys.exit(__doc__)

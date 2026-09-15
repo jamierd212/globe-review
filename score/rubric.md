@@ -99,6 +99,40 @@ real one once it reaches the archive.
 | "Doctors reject 4% offer and set new strike dates" | nhs-pay → the pay claims | **0** | Reports the position without endorsing or attacking it. |
 | "Militant medics hold patients to ransom again" | nhs-pay → the pay claims | **−2** | "Militant", "ransom". |
 
+## More worked examples
+
+Ordinary cases, not edge cases. Most items are one of these.
+
+| Headline | Target | Score | Why |
+|---|---|---|---|
+| "Asylum hotel costs hit £5.5m a day, figures show" | asylum seekers | **−1** | Cost framing, presented as a burden. Factual, still not neutral. |
+| "Home Office misses removals target for third year" | asylum seekers | **0** | Criticises the department, not the target. Do not read a stance in from who looks bad. |
+| "Refugee doctor who saved lives told to leave UK" | asylum seekers | **+2** | Sympathetic framing built entirely from the individual's worth. |
+| "Small boat arrivals fall 12% year on year" | asylum seekers | **0** | A number, no framing. |
+| "NHS waiting lists fall for fourth month running" | the current state of the NHS | **+1** | Improvement framed as improvement. |
+| "Patients dying in corridors as A&E buckles" | the current state of the NHS | **−2** | Language of collapse. |
+| "Junior doctors announce fresh strike dates" | the pay claims | **0** | States what happened. |
+| "Doctors' pay demand would cost every household £400" | the pay claims | **−1** | Cost framing aimed at the claim. |
+| "Ministers cave to union demands in pay climbdown" | the pay claims | **−1** | "Cave", "climbdown" — hostile to the claim succeeding. |
+| "Party raises record sum from small donors" | that party's growing support | **+1** | Achievement framing. |
+| "Questions mount over party's crypto millions" | that party's growing support | **−1** | "Questions mount" is a hostile construction. |
+| "Poll gives party 12-point lead" | that party's growing support | **0** | Reports a number. |
+| "Green levies add £200 to your bill, says report" | the climate commitments | **−1** | Cost of the policy, framed as yours. |
+| "Britain's wind farms break output record" | the climate commitments | **+1** | Success framing. |
+| "Council tax to rise 5% as services are cut" | the council's finances | **−1** | Hostile to the position being reported on. |
+| "Man charged over motorway crash" | — | **null** | No issue, no target. A court report with no framing. |
+| "Live: follow the latest updates" | — | **null** | Liveblog. |
+| "Everything we know about the new rules" | the new rules | **0** | Explainer. Genuinely neutral, not an abstention. |
+
+Two patterns worth naming because they catch people out:
+
+**Criticism of an actor is not a stance on the target.** "Home Office misses
+removals target" is hostile to the Home Office and neutral toward asylum
+seekers. Score the target.
+
+**Cost framing is a stance.** "£5.5m a day" is a choice about what to lead
+with, and it frames the target as a burden. It scores −1, not 0.
+
 ## Scoring blind
 
 **No paper is named anywhere in this file, deliberately.** The worked examples
