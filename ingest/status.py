@@ -25,7 +25,7 @@ import os
 import sys
 from datetime import datetime, timezone, timedelta
 
-from . import db
+from . import db, newsy
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -77,14 +77,19 @@ def collect(db_path=None):
             else:
                 break
 
+        # "Nothing new in 24 hours" only means something if we actually looked
+        # several times in those 24 hours. Judging it on elapsed time instead
+        # calls a feed frozen after any gap in polling - which is how this rule
+        # first went wrong, flagging healthy feeds after a weekend off.
+        looks = sum(1 for p in ok
+                    if (_hours_since(p["polled_at"], now) or 1e9) <= FROZEN_HOURS)
+
         flags = []
         if h_ok is None or h_ok > STALE_HOURS:
             flags.append("NOT ANSWERING")
         elif typical and latest < typical * THIN:
             flags.append("THIN")
-        if h_new is not None and h_new > FROZEN_HOURS:
-            flags.append("FROZEN")
-        elif h_new is None and len(polls) > 3:
+        if looks >= 3 and (h_new is None or h_new > FROZEN_HOURS):
             flags.append("FROZEN")
 
         rows.append({
@@ -98,21 +103,31 @@ def collect(db_path=None):
         })
 
     day_ago = (now - timedelta(days=1)).isoformat(timespec="seconds")
-    per_outlet = {r["outlet_id"]: r["n"] for r in con.execute(
-        "SELECT outlet_id, COUNT(*) AS n FROM article WHERE first_seen >= ? "
-        "GROUP BY outlet_id", (day_ago,))}
-    total = con.execute("SELECT COUNT(*) FROM article").fetchone()[0]
+    # counts are of NEWS. Sport and showbiz are collected but counted nowhere,
+    # so that "share of a paper's own output" means the same thing for a title
+    # that runs showbiz and one that does not.
+    recent = [dict(r) for r in con.execute(
+        "SELECT outlet_id, url_canon FROM article WHERE first_seen >= ?", (day_ago,))]
+    news_recent, other_recent = newsy.split(recent)
+    per_outlet = {}
+    for r in news_recent:
+        per_outlet[r["outlet_id"]] = per_outlet.get(r["outlet_id"], 0) + 1
+    allrows = [dict(r) for r in con.execute("SELECT url_canon FROM article")]
+    total = sum(1 for r in allrows if newsy.is_news(r["url_canon"]))
+    excluded_total = len(allrows) - total
     con.close()
     return {"generated": now.isoformat(timespec="seconds"), "feeds": rows,
             "articles_total": total, "articles_24h": per_outlet,
+            "not_news_24h": len(other_recent), "not_news_total": excluded_total,
             "excluded": excluded}
 
 
 def text(s):
     bad = [r for r in s["feeds"] if r["flags"]]
     out = [f"Sources at {s['generated']}",
-           f"{len(s['feeds'])} feeds, {sum(s['articles_24h'].values())} articles "
-           f"in the last 24h, {s['articles_total']} in total", ""]
+           f"{len(s['feeds'])} feeds, {sum(s['articles_24h'].values())} news "
+           f"articles in the last 24h, {s['articles_total']} in total "
+           f"({s['not_news_24h']} sport/showbiz set aside today)", ""]
     out.append(f"{'outlet':<14} {'kind':<8} {'last ok':>9} {'items':>6} "
                f"{'usual':>6} {'new':>9}  state")
     for r in sorted(s["feeds"], key=lambda r: (not r["flags"], r["outlet"])):
@@ -194,8 +209,8 @@ def html(s):
 </style>
 <h1>Sources</h1>
 <p class="meta">{s['generated']} &middot; {len(s['feeds'])} feeds &middot;
- {sum(s['articles_24h'].values())} articles in 24h &middot;
- {s['articles_total']} total &middot; refreshes every 5 min</p>
+ {sum(s['articles_24h'].values())} news articles in 24h &middot;
+ {s['articles_total']} total &middot; {s['not_news_24h']} sport/showbiz set aside &middot; refreshes every 5 min</p>
 {banner}
 <table><thead><tr><th>Outlet</th><th>Feed</th><th>Last ok</th><th>Items</th>
 <th>Usual</th><th>Last 24 polls</th><th>State</th><th>URL</th></tr></thead>

@@ -132,12 +132,57 @@ def test_status_spots_a_feed_that_has_gone_quiet():
     con.backup(disk); disk.commit(); disk.close()
     s = status.collect(path)
     by_url = {r["url"]: r for r in s["feeds"]}
+    assert by_url["https://a/live"]["flags"] == [], "a healthy feed was flagged"
     assert by_url["https://a/live"]["flags"] == [], by_url["https://a/live"]
     assert "FROZEN" in by_url["https://a/frozen"]["flags"], by_url["https://a/frozen"]
     assert "NOT ANSWERING" in by_url["https://a/dead"]["flags"], by_url["https://a/dead"]
     txt = status.text(s)
     assert "need attention" in txt
     assert status.html(s).startswith("<!doctype html>")
+
+def test_a_gzipped_feed_is_not_mistaken_for_a_broken_one():
+    """The Independent started gzipping its feeds between two polls, without
+    setting Content-Encoding. The body is valid gzip, the parser chokes, and it
+    looks exactly like a malformed feed - so the magic bytes are trusted over
+    the header."""
+    import gzip as _gz
+    body = _gz.compress(RSS)
+    assert body[:2] == b"\x1f\x8b"
+    # no header at all, which is the case that actually happened
+    assert feeds.parse(feeds.decompress(body, {}))[0]["title"].startswith("Fury")
+    # and with the header set, as most outlets do
+    assert feeds.parse(feeds.decompress(body, {"Content-Encoding": "gzip"}))
+    # plain XML is left alone
+    assert feeds.decompress(RSS, {}) == RSS
+    # something genuinely broken still reaches the parser as broken
+    assert feeds.decompress(b"<not xml", {}) == b"<not xml"
+
+def test_a_brand_new_feed_is_not_called_frozen():
+    """On the first day there is no 24h of history to judge against. Flagging
+    it anyway means every feed is red on day one and nobody reads the page
+    again."""
+    from ingest import status
+    from datetime import datetime, timezone, timedelta
+    import tempfile, os as _os
+    con = db.connect(":memory:")
+    db.sync_outlets(con, {"outlets": [{"id": "sky", "name": "Sky", "leaning": 0.0,
+        "market": 0.5, "weight": 1.0,
+        "feeds": [{"url": "https://a/new", "kind": "top"}]}]})
+    fid = con.execute("SELECT id FROM feed").fetchone()["id"]
+    now = datetime.now(timezone.utc)
+    # two polls a minute apart: answering, nothing new, and only just started.
+    # Also covers the case that first broke this - a long gap in polling, which
+    # makes the elapsed time look like a day even though we only looked twice.
+    for mins in (2, 1):
+        con.execute("INSERT INTO poll (feed_id,polled_at,http_status,n_items,n_new)"
+                    " VALUES (?,?,?,?,?)",
+                    (fid, (now - timedelta(minutes=mins)).isoformat(timespec="seconds"),
+                     "200", 20, 0))
+    con.commit()
+    path = _os.path.join(tempfile.mkdtemp(), "t.sqlite")
+    disk = db.connect(path); con.backup(disk); disk.commit(); disk.close()
+    s = status.collect(path)
+    assert s["feeds"][0]["flags"] == [], s["feeds"][0]["flags"]
 
 if __name__ == "__main__":
     fails = 0
