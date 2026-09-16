@@ -78,8 +78,22 @@ Reply with JSON and nothing else:
 Naming rules. You are given several papers' headlines for the same story; the
 name goes on all of them, so it must belong to none of them.
 
-- **Say what happened, in four to seven words.** "Reform donations reach £72m",
-  not "How could Reform UK spend its £72m of new billionaire money?".
+- **Three to five words. A label, not a sentence.** This is the hardest rule
+  and the one most often got wrong. It goes inside a small shape and it has to
+  be readable at a glance, so it should read like an index entry, not like a
+  headline. Cut every word that is not needed to tell this story from another:
+  adjectives, "record", "amid ...", "over ...", and the verb wherever the name
+  still identifies the story without it.
+
+  | too long | right |
+  |---|---|
+  | Reform receives record crypto billionaire donations | **Reform crypto donations** |
+  | Village holds referendum over asylum seeker camp | **Village referendum on asylum camp** |
+  | Trump dismisses AI safety warnings amid China rivalry | **Trump dismisses AI safety warnings** |
+  | Boris Johnson escapes drone strike in Ukraine | **Johnson drone strike** |
+  | Police seek suspects after Portsmouth protest violence | **Portsmouth protest arrests** |
+
+  If it reads like something a paper would print, it is still too long.
 - **Take the wording every paper shares.** Never lift one paper's headline. If
   one calls it a crackdown and another a climbdown, the name uses neither.
 - **No word that takes a side.** Not crackdown, climbdown, chaos, fury,
@@ -90,7 +104,7 @@ name goes on all of them, so it must belong to none of them.
   whatever happens, it is too broad.
 - **No question marks, no colons introducing a paper's angle, no quotes from
   one paper.** Plain statement of the event.
-- It has to fit inside a small shape, so keep it short.
+- Never more than six words. Five is better. Three is often enough.
 - **A name is always required.** Never return null for the name, whatever you
   decide about filing. A story with no standing subject is still a story, still
   goes on the globe, and still needs something written on it. Foreign news and

@@ -345,7 +345,10 @@ def clean_name(suggested, fallback):
         return fallback
     n = re.sub(r"\s+", " ", n)
     words = n.split()
-    if len(words) < 3 or len(words) > 10 or len(n) > 72:
+    # A label, not a sentence. Anything longer is a headline, and a headline
+    # is one paper's words on everybody's coverage - as well as being too big
+    # for the shape it has to sit in.
+    if len(words) < 2 or len(words) > 6 or len(n) > 42:
         return fallback
     if "?" in n or LOADED.search(n):
         return fallback
