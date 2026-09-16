@@ -1,11 +1,18 @@
 __pycache__/
 *.pyc
-# SQLite side files only. The database itself is committed: the observation
-# table is the one thing in this project that cannot be reconstructed after
-# the fact, so it does not live only on one laptop. Phase 5 replaces this
-# with gzipped monthly shards once the schema settles.
+# The article database stays off the repo while it is public. It holds the
+# papers' own headlines and standfirsts - 57,000 words of somebody else's
+# copy - and pushing that is republishing, which is the one thing the plan
+# commits us never to do. The frames are fine: story names we wrote
+# ourselves, plus numbers.
+#
+# The cost is that the archive then lives on one machine, and the
+# observation table is the part that cannot be rebuilt. Back it up. When
+# the repo goes private, drop these two lines and commit it.
+data/ingest.sqlite
 data/*.sqlite-wal
 data/*.sqlite-shm
+data/view.html
 data/cacert.pem
 .venv/
 .env
