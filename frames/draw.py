@@ -115,61 +115,28 @@ def write(frame, path=None, size=SIZE):
     parts.append(f'<circle cx="{cx}" cy="{cy}" r="{R}" fill="url(#lit)"/>')
     parts.append(f'<circle cx="{cx}" cy="{cy}" r="{R}" fill="url(#rim)"/>')
 
-    # labels: at the widest point of each shape, biggest shapes first, and
-    # only where the shape is big enough to hold the words
-    placed = []
-    for i, s in enumerate(stories):
-        poly = polys[i]
-        if len(poly) < 4:
-            continue
-        half = len(poly) // 2
-        best, bw = None, 0
-        for k in range(half):
-            a, y = poly[k]
-            b, _ = poly[len(poly) - 1 - k]
-            if b - a > bw:
-                bw, best = b - a, ((a + b) / 2, y)
-        if not best:
-            continue
-        wpx = bw * R
-        area = s["area"] / sum(t["area"] for t in stories)
-        fs = max(9.0, min(21.0, 7 + 46 * math.sqrt(area)))
-        words = s["name"].split()
-        per = max(1, int(wpx / (fs * 0.52)))
-        lines, cur = [], ""
-        for wd in words:
-            if len(cur) + len(wd) + 1 <= per:
-                cur = (cur + " " + wd).strip()
-            else:
-                if cur:
-                    lines.append(cur)
-                cur = wd
-            if len(lines) >= 3:
-                break
-        if cur and len(lines) < 3:
-            lines.append(cur)
-        if not lines or wpx < 46:
-            continue
-        x, y = px(*best)
-        hh = len(lines) * fs * 1.12
-        if any(abs(x - p[0]) < (bw * R * 0.5 + p[2]) and abs(y - p[1]) < (hh / 2 + p[3])
-               for p in placed):
-            continue
-        placed.append((x, y, bw * R * 0.5, hh / 2))
+    # labels: deepest point in the shape, lines broken to the shape's own
+    # width at each height, nothing allowed to touch anything else
+    from frames import labels as L
+    for lab in L.place(stories, layout, R):
+        s = stories[lab["cell"]]
         st = s.get("stance")
         ink = "#fbf9f0" if (st is None or st < -0.35 or st > 0.9) else "#16180f"
-        sh = "0 1px 2px rgba(0,0,0,.45)"
-        parts.append(f'<g text-anchor="middle" fill="{ink}" '
-                     f'style="paint-order:stroke;text-shadow:{sh}">')
-        top = y - hh / 2 + fs * 0.9
-        for k, ln in enumerate(lines):
-            parts.append(f'<text x="{x:.1f}" y="{top + k * fs * 1.12:.1f}" '
-                         f'font-size="{fs:.1f}" font-weight="700">{esc(ln)}</text>')
-        if s.get("stance") is not None:
-            parts.append(f'<text x="{x:.1f}" y="{top + len(lines) * fs * 1.12 + 1:.1f}" '
-                         f'font-size="{fs * 0.62:.1f}" font-weight="500" '
-                         f'font-family="monospace" opacity="0.92">'
-                         f'{s["stance"]:+.1f}</text>')
+        parts.append('<g text-anchor="middle" fill="%s" style="text-shadow:'
+                     '0 1px 2px rgba(0,0,0,.45)">' % ink)
+        # NB: not cx/cy - px() closes over those as the disc centre, and
+        # rebinding them here silently moved every label off the canvas
+        for txt, lx, ly in lab["lines"]:
+            x, y = px(lx, ly)
+            if txt == lab["tail"]:
+                parts.append(
+                    f'<text x="{x:.1f}" y="{y + lab["fs"] * 0.3:.1f}" '
+                    f'font-size="{lab["fs"] * 0.66:.1f}" font-weight="600" '
+                    f'font-family="monospace" opacity="0.92">{esc(txt)}</text>')
+            else:
+                parts.append(
+                    f'<text x="{x:.1f}" y="{y + lab["fs"] * 0.35:.1f}" '
+                    f'font-size="{lab["fs"]:.1f}" font-weight="700">{esc(txt)}</text>')
         parts.append("</g>")
 
     parts.append("</g>")
