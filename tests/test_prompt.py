@@ -60,6 +60,40 @@ def test_cost_arithmetic():
     # 1M in + 1M out at Haiku 4.5 list
     assert abs(money(1_000_000, 1_000_000) - 6.00) < 1e-9
 
+def test_the_naming_rules_reach_the_model():
+    t = P.TAG_SYSTEM
+    for rule in ("four to seven words", "belong to none of them",
+                 "takes a side", "Name the event, not the field",
+                 "A name is always required"):
+        assert rule in t, rule
+
+def test_a_loaded_name_is_rejected():
+    """A name sits on every paper's coverage of that story. One that carries a
+    word being measured is measuring its own label, so it fails safe."""
+    from score.run import clean_name
+    keep = "Old headline"
+    for bad in ("Fury as ministers cave on boiler ban",
+                "Reform donations: a scandal in the making",
+                "Is AI dangerous?",
+                "Chaos as asylum hotel plan collapses",
+                "Humiliating climbdown over welfare cuts"):
+        assert clean_name(bad, keep) == keep, bad
+
+def test_a_good_name_is_taken():
+    from score.run import clean_name
+    for good, want in (
+        ("reform donations reach £72m", "Reform donations reach £72m"),
+        ("Sanctions on Israeli settlements announced", "Sanctions on Israeli settlements announced"),
+        ('  "Johnson train hit by drone in Ukraine"  ', "Johnson train hit by drone in Ukraine")):
+        assert clean_name(good, "fallback") == want, good
+
+def test_nonsense_falls_back():
+    from score.run import clean_name
+    for bad in ("", None, "Reform", "x " * 40,
+                "The Guardian view on Lucy Letby: Thirlwall should have waited for "
+                "the pending case to conclude first"):
+        assert clean_name(bad, "fallback") == "fallback", repr(bad)
+
 if __name__ == "__main__":
     fails = 0
     for n, fn in sorted(globals().items()):
