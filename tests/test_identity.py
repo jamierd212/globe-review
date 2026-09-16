@@ -131,6 +131,23 @@ def test_lifetimes_reports_a_plausible_churn():
     assert lt["median"] == 1, f"most stories should be short: {lt}"
     assert lt["n"] > 30, lt
 
+def test_a_running_story_is_never_renamed():
+    """naming.md: a name is written once and left alone. Someone watching a
+    line move needs it to keep meaning the same thing - and the provisional
+    name is one paper's headline, so re-applying it puts that paper's framing
+    back on everybody's coverage."""
+    import os as _os, sys as _sys, tempfile
+    _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    from ingest import db
+    import inspect
+    from cluster import run as CR
+    src = inspect.getsource(CR.run)
+    upd = src[src.index("if row:"):src.index("else:", src.index("if row:"))]
+    assert "name=?" not in upd, \
+        "the update path sets name - clustering must not rename a live story"
+    assert "name" in src[src.index("else:", src.index("if row:")):], \
+        "a newly born story still needs a name"
+
 if __name__ == "__main__":
     fails = 0
     for n, fn in sorted(globals().items()):

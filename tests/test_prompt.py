@@ -62,7 +62,7 @@ def test_cost_arithmetic():
 
 def test_the_naming_rules_reach_the_model():
     t = P.TAG_SYSTEM
-    for rule in ("four to seven words", "belong to none of them",
+    for rule in ("Three to five words", "belong to none of them",
                  "takes a side", "Name the event, not the field",
                  "A name is always required"):
         assert rule in t, rule
@@ -83,13 +83,14 @@ def test_a_good_name_is_taken():
     from score.run import clean_name
     for good, want in (
         ("reform donations reach £72m", "Reform donations reach £72m"),
-        ("Sanctions on Israeli settlements announced", "Sanctions on Israeli settlements announced"),
-        ('  "Johnson train hit by drone in Ukraine"  ', "Johnson train hit by drone in Ukraine")):
+        ("Sanctions on Israeli settlements", "Sanctions on Israeli settlements"),
+        ('  "Johnson drone strike"  ', "Johnson drone strike")):
         assert clean_name(good, "fallback") == want, good
 
 def test_nonsense_falls_back():
     from score.run import clean_name
     for bad in ("", None, "Reform", "x " * 40,
+                "Reform receives record crypto billionaire donations",
                 "The Guardian view on Lucy Letby: Thirlwall should have waited for "
                 "the pending case to conclude first"):
         assert clean_name(bad, "fallback") == "fallback", repr(bad)

@@ -1,15 +1,10 @@
 __pycache__/
 *.pyc
-# The article database stays off the repo while it is public. It holds the
-# papers' own headlines and standfirsts - 57,000 words of somebody else's
-# copy - and pushing that is republishing, which is the one thing the plan
-# commits us never to do. The frames are fine: story names we wrote
-# ourselves, plus numbers.
-#
-# The cost is that the archive then lives on one machine, and the
-# observation table is the part that cannot be rebuilt. Back it up. When
-# the repo goes private, drop these two lines and commit it.
-data/ingest.sqlite
+# The database is committed by Jamie's decision (16 Sept 2026), on a public
+# repo. It holds the papers' own headlines and standfirsts - about 57,000
+# words of somebody else's copy. Worth knowing rather than forgetting:
+# public repos are crawled by code-search indexes and dataset scrapers
+# whether or not anyone visits them.
 data/*.sqlite-wal
 data/*.sqlite-shm
 data/view.html

@@ -47,7 +47,13 @@ def collect(con, hours=WINDOW, min_outlets=2, top=TOP):
         "JOIN story_member m ON m.story_id = s.id "
         "JOIN article a ON a.id = m.article_id "
         "LEFT JOIN article_score sc ON sc.article_id = a.id "
-        "WHERE s.status = 'live' AND s.last_seen >= ?", (cut,))]
+        # Only stories that have been through tagging. Until then a story's
+        # name is the provisional one from clustering - the most central
+        # HEADLINE, which is one paper's words sitting on everybody's
+        # coverage. Drawing those puts the Guardian's framing on a shape made
+        # of eleven papers.
+        "WHERE s.status = 'live' AND s.last_seen >= ? "
+        "AND s.target IS NOT NULL AND s.target != ''", (cut,))]
 
     stories = {}
     for r in rows:
@@ -122,7 +128,8 @@ def build(hours=WINDOW, db_path=None, top=TOP):
     con = db.connect(db_path)
     stories = collect(con, hours, top=top)
     if not stories:
-        print("no live stories with two or more outlets - run the clusterer")
+        print("no tagged live stories with two or more outlets.")
+        print("run:  python3 -m cluster.run  then  python3 -m score.run tag")
         return None
     layout = F.fit(stories, rows=360, relax=420, iters=140)
     chk = F.check(layout, rows=360)

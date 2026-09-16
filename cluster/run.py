@@ -176,11 +176,17 @@ def run(hours=WINDOW_HOURS, threshold=None, dry=False, db_path=None):
         cen = ",".join(f"{x:.5f}" for x in st["centroid"]).encode()
         row = con.execute("SELECT id FROM story WHERE id=?", (st["id"],)).fetchone()
         if row:
+            # The name is NOT touched. It is written once when the story is
+            # born and left alone - naming.md's rule, which this code was
+            # quietly breaking: every clustering run overwrote the model's
+            # neutral name with the provisional one, which is the most central
+            # headline, ie one paper's words. The globe was carrying "The
+            # Guardian view on Reform UK: crypto billionaires must be stopped"
+            # as a neutral label on eleven papers' coverage.
             con.execute(
                 "UPDATE story SET last_seen=?, status=?, centroid=?, n_articles=? "
-                + (", name=?" if name else "") + " WHERE id=?",
-                ((now, st["status"], cen, st.get("n_articles", 0))
-                 + ((name,) if name else ()) + (st["id"],)))
+                "WHERE id=?",
+                (now, st["status"], cen, st.get("n_articles", 0), st["id"]))
         else:
             con.execute(
                 "INSERT INTO story (id, name, target, issue_id, first_seen, "
