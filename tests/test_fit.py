@@ -113,6 +113,63 @@ def test_a_story_that_leaves_does_not_reshuffle_the_rest():
 def test_empty_input_is_not_a_crash():
     assert F.fit([])["n"] == 0 and F.refit({"ids":[],"sx":[],"sy":[],"w":[]}, [])["n"] == 0
 
+# --- labels -------------------------------------------------------------
+def test_labels_stay_inside_the_disc_and_clear_of_each_other():
+    """Both failures this guards against were invisible to the maths and
+    obvious to the eye: text drawn off the canvas entirely (a shadowed
+    variable put every label at the wrong origin), and labels overlapping."""
+    import json as _json
+    from frames import labels as LB, draw
+    items = make(30)
+    for k, it in enumerate(items):
+        it["name"] = ["Reform receives record crypto billionaire donations",
+                      "Boris Johnson escapes drone strike in Ukraine",
+                      "Tech leaders call for AI development slowdown",
+                      "Sweden holds parliamentary election"][k % 4]
+        it["stance"] = ((k % 5) - 2) / 1.0
+    layout = F.fit(items, rows=300, relax=300, iters=80)
+    R = (draw.SIZE - 2 * draw.PAD) / 2.0
+    cx = cy = draw.SIZE / 2.0
+    labs = LB.place(items, layout, R)
+    assert len(labs) >= len(items) * 0.6, f"only {len(labs)}/{len(items)} labelled"
+
+    # One box per LINE, compared only across labels. Two invariants, and
+    # neither is the obvious one:
+    #   lines of the same label overlap by design - that is leading
+    #   bounding boxes of two labels may overlap without any text touching,
+    #     because a short line of one can sit beside a long line of another
+    # So the thing that must be true is that no rendered line touches a
+    # rendered line belonging to a different shape.
+    lines = []
+    for li, lab in enumerate(labs):
+        for txt, lx, ly in lab["lines"]:
+            fs = lab["fs"] * 0.66 if txt == lab["tail"] else lab["fs"]
+            w = LB.text_width(txt, fs)
+            x, y = cx + lx * R, cy - ly * R
+            for ex in (x - w / 2, x + w / 2):
+                assert math.hypot(ex - cx, y - cy) <= R + 2, \
+                    f"{txt!r} is outside the disc"
+            lines.append((li, x, y, w / 2, fs * 0.5, txt))
+    for i in range(len(lines)):
+        for j in range(i + 1, len(lines)):
+            a, b = lines[i], lines[j]
+            if a[0] == b[0]:
+                continue                      # same label
+            assert not (abs(a[1] - b[1]) < a[3] + b[3]
+                        and abs(a[2] - b[2]) < a[4] + b[4]), \
+                f"text overlaps: {a[5][:28]!r} / {b[5][:28]!r}"
+
+def test_the_width_estimate_is_close_to_the_real_font():
+    """Measured in a browser against bold Helvetica at 20px. If this drifts
+    the fitting silently starts overflowing shapes."""
+    from frames.labels import text_width
+    for txt, real in (("Thirlwall inquiry report on Lucy", 14.737),
+                      ("Boris Johnson escapes", 11.130),
+                      ("Tech leaders call", 7.978),
+                      ("US confirms space weapons", 13.629)):
+        mine = text_width(txt, 1.0)
+        assert 0.97 < mine / real < 1.05, f"{txt!r}: {mine:.2f} vs {real:.2f}"
+
 if __name__ == "__main__":
     fails = 0
     for n, fn in sorted(globals().items()):
