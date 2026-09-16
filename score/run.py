@@ -120,16 +120,17 @@ def money(tin, tout):
 
 # -------------------------------------------------------------------- tag ---
 
-def cmd_tag(limit=None, dry=False, db_path=None):
+def cmd_tag(limit=None, dry=False, db_path=None, rename=False):
     con = db.connect(db_path)
     issues = json.load(open(os.path.join(ROOT, "taxonomy.json"),
                             encoding="utf-8"))["issues"]
     # `expect` is a testing prior and must not reach the model
     safe = [{"id": i["id"], "name": i["name"], "target": i["target"]} for i in issues]
 
+    where = ("status != 'closed'" if rename else
+             "status != 'closed' AND (target IS NULL OR target = '')")
     todo = [dict(r) for r in con.execute(
-        "SELECT id, name FROM story WHERE status != 'closed' "
-        "AND (target IS NULL OR target = '') ORDER BY n_articles DESC")]
+        f"SELECT id, name FROM story WHERE {where} ORDER BY n_articles DESC")]
     if limit:
         todo = todo[:limit]
     if not todo:
@@ -156,8 +157,14 @@ def cmd_tag(limit=None, dry=False, db_path=None):
         target = (out.get("target") or "").strip()
         if iid and not target:
             target = next((i["target"] for i in safe if i["id"] == iid), "")
-        con.execute("UPDATE story SET issue_id=?, target=?, target_conf=? WHERE id=?",
-                    (iid, target, "inherited" if iid else "generated", s["id"]))
+        # The name is written once, when the story is first filed, and not
+        # touched again. Someone watching a line move needs it to keep meaning
+        # the same thing; a story that has genuinely become something else is a
+        # new story, not a rename.
+        name = clean_name(out.get("name"), s["name"])
+        con.execute("UPDATE story SET issue_id=?, target=?, target_conf=?, name=? "
+                    "WHERE id=?",
+                    (iid, target, "inherited" if iid else "generated", name, s["id"]))
         counts[iid or "(none - not a news subject)"] = \
             counts.get(iid or "(none - not a news subject)", 0) + 1
     con.commit()
@@ -318,6 +325,33 @@ def score_batched(cli, todo, system, ver, con, poll_every=20):
     return 0
 
 
+# words that take a side. A name carrying one of these is measuring its own
+# label, so the model's suggestion is rejected and the fallback used instead.
+LOADED = re.compile(
+    r"\b(fury|furious|slam(?:med|s)?|blast(?:ed|s)?|rage|outrage|chaos|shambles|"
+    r"crackdown|climbdown|cave[sd]?|humiliat\w*|triumph|disaster|scandal|"
+    r"blow to|shock(?:ing)?|damning|brutal|savage[ds]?|blasted|meltdown|"
+    r"desperate|absurd|farce|betrayal|woke|shameful)\b", re.I)
+
+
+def clean_name(suggested, fallback):
+    """Take the model's name if it obeys the rules, otherwise keep what we had.
+
+    Cheaper than another round trip and it fails safe: a bad name is worse than
+    a dull one, because it sits on every paper's coverage of that story.
+    """
+    n = (suggested or "").strip().strip('"').strip()
+    if not n:
+        return fallback
+    n = re.sub(r"\s+", " ", n)
+    words = n.split()
+    if len(words) < 3 or len(words) > 10 or len(n) > 72:
+        return fallback
+    if "?" in n or LOADED.search(n):
+        return fallback
+    return n[0].upper() + n[1:]
+
+
 DESKS = [("comment", r"/(comment|opinion|columnists?|voices)/"),
          ("leader",  r"/(leader|editorial)s?/"),
          ("analysis", r"/(analysis|explainer|long-read)/"),
@@ -339,7 +373,7 @@ if __name__ == "__main__":
     lim = int(a[a.index("--limit") + 1]) if "--limit" in a else None
     dry = "--dry" in a
     if cmd == "tag":
-        sys.exit(cmd_tag(limit=lim, dry=dry))
+        sys.exit(cmd_tag(limit=lim, dry=dry, rename="--rename" in a))
     if cmd == "score":
         sys.exit(cmd_score(limit=lim, dry=dry, batch="--batch" in a))
     sys.exit(__doc__)
