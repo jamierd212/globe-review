@@ -1,10 +1,11 @@
 __pycache__/
 *.pyc
-# The database is committed by Jamie's decision (16 Sept 2026), on a public
-# repo. It holds the papers' own headlines and standfirsts - about 57,000
-# words of somebody else's copy. Worth knowing rather than forgetting:
-# public repos are crawled by code-search indexes and dataset scrapers
-# whether or not anyone visits them.
+# The database is not committed: it is a 7MB binary that changes every hour,
+# and git stores a whole new copy each time - about 2.7GB a month. The same
+# information lives in data/shards as plain text that is only ever added to,
+# which git stores for the cost of the lines added, and which `archive
+# restore` turns back into a database.
+data/ingest.sqlite
 data/*.sqlite-wal
 data/*.sqlite-shm
 data/view.html

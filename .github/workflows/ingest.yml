@@ -7,8 +7,13 @@ on:
   schedule:
     - cron: "7 5-21 * * *"
   workflow_dispatch:
+    inputs:
+      rescore:
+        description: "Re-score everything against the current rubric"
+        type: boolean
+        default: false
 
-# one run at a time: two polls writing the same SQLite file would corrupt it,
+# one run at a time: two runs writing the same SQLite file would corrupt it,
 # and a skipped hour is a far cheaper loss than a corrupted archive
 concurrency:
   group: ingest
@@ -18,9 +23,9 @@ permissions:
   contents: write
 
 jobs:
-  poll:
+  run:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -28,28 +33,122 @@ jobs:
         with:
           python-version: "3.12"
 
-      # no pip install: the ingest is standard library only, on purpose
+      # The ingest itself needs nothing outside the standard library. The
+      # clusterer wants sentence-transformers, which drags in torch - slow to
+      # install and slow to download the model, so both are cached. Without
+      # the caches this step is most of the run.
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-sentence-transformers-1
+
+      - name: Cache the sentence model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-all-MiniLM-L6-v2
+
+      - name: Install
+        run: pip install --quiet sentence-transformers anthropic
+
+      # The database is not in the repository, so it has to come from
+      # somewhere. The cache carries it between runs, which keeps the stored
+      # vectors and makes clustering seconds rather than minutes. If the cache
+      # is cold the shards rebuild it - slower, because the vectors then have
+      # to be recomputed, but nothing is lost.
+      - name: Carry the database between runs
+        uses: actions/cache@v4
+        with:
+          path: data/ingest.sqlite
+          key: db-${{ github.run_id }}
+          restore-keys: db-
+
+      - name: Rebuild from the archive if the cache was cold
+        run: |
+          if [ ! -f data/ingest.sqlite ]; then
+            echo "no cached database - rebuilding from the shards"
+            python3 -m ingest.archive restore data/ingest.sqlite
+          else
+            echo "cached database found"
+          fi
+
+      # --- the pipeline, in the order it has to run ---------------------
+      #
+      # poll     fetch every feed, record position and failures
+      # cluster  group new articles into stories, keeping yesterday's ids
+      # tag      name each new story and file it under a subject
+      # score    stance for each article against its story's target
+      # build    fit the globe and draw it
+      #
+      # Each step is allowed to fail without stopping the next: a bad model
+      # run should never cost us the articles, which are the part that cannot
+      # be collected again.
 
       - name: Poll every feed
         run: python3 -m ingest.run poll
+
+      - name: Group articles into stories
+        run: python3 -m cluster.run || echo "clustering failed, continuing"
+
+      - name: Name and file new stories
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python3 -m score.run tag || echo "tagging failed, continuing"
+
+      - name: Score
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ "${{ inputs.rescore }}" = "true" ]; then
+            python3 -m score.run score --batch
+          else
+            python3 -m score.run score --batch || echo "scoring failed, continuing"
+          fi
+
+      - name: Build the frame and draw it
+        run: python3 -m frames.build
 
       - name: Refresh the source dashboard
         run: python3 -m ingest.status --html || true   # a warning must not fail the run
 
       - name: Daily report
-        if: github.event.schedule == '7 21 * * *' || github.event_name == 'workflow_dispatch'
+        if: github.event.schedule == '7 21 * * *'
         run: python3 -m ingest.run report 1
 
-      - name: Commit the archive
+      # The archive, as plain text that is only ever added to. The database
+      # itself is never committed: it is 7MB and git stores a whole new copy
+      # of a binary every time it changes, which would be about 2.7GB a month.
+      # The shards say the same thing in a form git can store for the cost of
+      # the lines added.
+      - name: Write the archive
+        run: python3 -m ingest.archive export
+
+      # Prove it can be read back, every run. An archive nobody has restored
+      # is not an archive.
+      - name: Check the archive restores
+        run: python3 -m ingest.archive check
+
+      - name: Commit
         run: |
           git config user.name  "ingest"
           git config user.email "ingest@users.noreply.github.com"
-          git add -A data/
+          git add data/shards data/frame.json data/globe.svg data/status.html data/daily.csv
           if git diff --cached --quiet; then
-            echo "nothing to commit"
+            echo "nothing changed"
           else
-            git commit -m "ingest: $(date -u +%Y-%m-%dT%H:%MZ)"
-            # another hour's run may have landed while this one was working
+            git commit -m "frame: $(date -u +%Y-%m-%dT%H:%MZ)"
             git pull --rebase --autostash
             git push
           fi
+
+      # A working copy of the database as well, for convenience only - the
+      # shards above are the record, and this can be rebuilt from them with
+      # `python3 -m ingest.archive restore`.
+      - name: Keep a working copy of the database
+        uses: actions/upload-artifact@v4
+        with:
+          name: working-db-${{ github.run_number }}
+          path: data/ingest.sqlite
+          retention-days: 30
+          if-no-files-found: warn

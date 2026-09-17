@@ -47,6 +47,13 @@ CREATE TABLE IF NOT EXISTS article (
   published_at TEXT,           -- ISO8601 UTC, from the feed; may be absent
   first_seen   TEXT NOT NULL,  -- ISO8601 UTC, when WE first saw it
   title_sig    TEXT NOT NULL,  -- normalised-title hash, for exact-dup catching
+  -- The article's vector, written once when it first arrives. An article's
+  -- words never change, so re-reading the whole 72-hour window through the
+  -- model every hour was 130 seconds of work to get the same numbers back.
+  -- vector_model records which vectoriser produced it, because the two are
+  -- not interchangeable and mixing them would quietly wreck the clustering.
+  vector       BLOB,
+  vector_model TEXT,
   UNIQUE (outlet_id, url_canon)
 );
 CREATE INDEX IF NOT EXISTS ix_article_seen ON article (first_seen);
@@ -156,6 +163,8 @@ DEFAULT_DB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 MIGRATIONS = [
     ("feed", "active", "INTEGER NOT NULL DEFAULT 1"),
     ("poll", "items_hash", "TEXT"),
+    ("article", "vector", "BLOB"),
+    ("article", "vector_model", "TEXT"),
 ]
 
 

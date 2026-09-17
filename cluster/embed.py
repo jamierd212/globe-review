@@ -100,6 +100,21 @@ def available():
         return False
 
 
+def which(prefer_sentence=True):
+    """Which vectoriser will be used, without loading it.
+
+    find_spec rather than import: importing sentence_transformers pulls in
+    torch, which takes about thirty seconds. Asking whether it is installed
+    should not cost that, because on most runs every vector is already stored
+    and the model is never needed at all.
+    """
+    if prefer_sentence:
+        import importlib.util
+        if importlib.util.find_spec("sentence_transformers") is not None:
+            return "sentence"
+    return "hashed"
+
+
 def best_batch(texts, prefer_sentence=True):
     """Vectors, and which method produced them.
 
@@ -115,3 +130,21 @@ def best_batch(texts, prefer_sentence=True):
             sys.stderr.write(f"sentence model unavailable ({type(e).__name__}), "
                              f"falling back to word counting\n")
     return embed_batch(texts), "hashed"
+
+
+# --- storing them ----------------------------------------------------------
+#
+# Packed as float32. 384 dimensions is 1.5KB an article, which is nothing
+# next to re-reading every article through the model once an hour.
+
+import array as _array
+
+
+def pack(vec):
+    return _array.array("f", vec).tobytes()
+
+
+def unpack(blob):
+    a = _array.array("f")
+    a.frombytes(blob)
+    return list(a)

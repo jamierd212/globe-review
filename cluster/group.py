@@ -69,6 +69,20 @@ def cosine(a, b):
     return 0.0 if na == 0 or nb == 0 else n / (na * nb)
 
 
+def normalise(v):
+    n = math.sqrt(sum(x * x for x in v))
+    return [x / n for x in v] if n else v
+
+
+# Every vector here is unit length - the sentence model returns them that
+# way, the word-counting one normalises, and centroids are normalised below.
+# So the cosine between two of them is just the dot product, and computing
+# both lengths again on every comparison is two thirds of the arithmetic
+# thrown away. At 938 articles that was 27 seconds a run.
+def _dot(a, b):
+    return sum(x * y for x, y in zip(a, b))
+
+
 def _centroid(vecs):
     if not vecs:
         return []
@@ -94,6 +108,8 @@ def group(items, threshold=THRESHOLD, min_outlets=MIN_OUTLETS,
 
     # a fixed starting order so two runs of the same day match each other
     ordered = sorted(items, key=lambda i: (i.get("published_at") or "", i["id"]))
+    # normalise once here rather than inside every comparison
+    ordered = [dict(i, vec=normalise(i["vec"])) for i in ordered]
 
     assign = {}
     centroids = []          # list of vectors, index = group number
@@ -102,7 +118,7 @@ def group(items, threshold=THRESHOLD, min_outlets=MIN_OUTLETS,
     for it in ordered:
         best, best_sim = -1, threshold
         for gi, c in enumerate(centroids):
-            s = cosine(it["vec"], c)
+            s = _dot(it["vec"], c)
             if s >= best_sim:
                 best, best_sim = gi, s
         if best < 0:
@@ -129,7 +145,7 @@ def group(items, threshold=THRESHOLD, min_outlets=MIN_OUTLETS,
             for gi, c in enumerate(centroids):
                 if not c:
                     continue
-                s = cosine(it["vec"], c)
+                s = _dot(it["vec"], c)
                 if s >= best_sim:
                     best, best_sim = gi, s
             if best < 0:

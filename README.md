@@ -128,6 +128,36 @@ Use `--batch` instead: half price, no minimum, no effect on the prompt, and an
 hourly job does not care about latency. About **$12 a month** at current
 volumes.
 
+## What is kept, and for how long
+
+| | where | how long |
+|---|---|---|
+| the hourly frames — every globe that was ever drawn | in the repo | forever |
+| the articles, scores and feed positions | `data/shards/`, in the repo | forever |
+| a working copy of the database | workflow artifact | 30 days |
+
+`data/shards/` is the archive. Plain text files, one directory per month, only
+ever added to — so git stores a month of history for the cost of the lines
+added rather than a fresh 7MB copy every hour.
+
+```bash
+python3 -m ingest.archive export     # write anything new
+python3 -m ingest.archive restore    # rebuild the database from them
+python3 -m ingest.archive check      # do the two agree?
+```
+
+The database itself is **not** in the repo. It is a binary that changes every
+hour, and git keeps a whole new copy each time — about 2.7GB a month.
+
+Two things make the shards trustworthy rather than reassuring:
+
+- **`check` runs on every job.** It rebuilds a database from the shards and
+  compares it against the live one, row for row, including the feed positions.
+  An archive nobody has read back is a write-only log.
+- **Feed positions survive exactly.** They are the one thing that can never be
+  collected again — you cannot go back and ask what a paper's front page looked
+  like at 3pm last Tuesday.
+
 ## Watching the sources
 
 ```bash

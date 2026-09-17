@@ -1,0 +1,336 @@
+{
+ "outlets": [
+  {
+   "id": "bbc",
+   "name": "BBC News",
+   "leaning": -0.05,
+   "market": 0.58,
+   "weight": 1.25
+  },
+  {
+   "id": "c4",
+   "name": "Channel 4 News",
+   "leaning": -0.2,
+   "market": 0.5,
+   "weight": 0.5
+  },
+  {
+   "id": "express",
+   "name": "Express",
+   "leaning": 0.72,
+   "market": -0.52,
+   "weight": 1.1
+  },
+  {
+   "id": "ft",
+   "name": "Financial Times",
+   "leaning": 0.3,
+   "market": 0.68,
+   "weight": 0.8
+  },
+  {
+   "id": "guardian",
+   "name": "The Guardian",
+   "leaning": -0.72,
+   "market": 0.36,
+   "weight": 1.1
+  },
+  {
+   "id": "i",
+   "name": "i paper",
+   "leaning": -0.28,
+   "market": 0.32,
+   "weight": 0.6
+  },
+  {
+   "id": "independent",
+   "name": "The Independent",
+   "leaning": -0.46,
+   "market": 0.28,
+   "weight": 0.85
+  },
+  {
+   "id": "mail",
+   "name": "Daily Mail",
+   "leaning": 0.68,
+   "market": -0.3,
+   "weight": 1.35
+  },
+  {
+   "id": "metro",
+   "name": "Metro",
+   "leaning": 0.05,
+   "market": -0.45,
+   "weight": 0.8
+  },
+  {
+   "id": "mirror",
+   "name": "Mirror",
+   "leaning": -0.62,
+   "market": -0.55,
+   "weight": 1.05
+  },
+  {
+   "id": "sky",
+   "name": "Sky News",
+   "leaning": 0.08,
+   "market": 0.52,
+   "weight": 1.0
+  },
+  {
+   "id": "sun",
+   "name": "The Sun",
+   "leaning": 0.6,
+   "market": -0.68,
+   "weight": 1.15
+  },
+  {
+   "id": "telegraph",
+   "name": "The Telegraph",
+   "leaning": 0.62,
+   "market": 0.38,
+   "weight": 1.0
+  },
+  {
+   "id": "times",
+   "name": "The Times",
+   "leaning": 0.42,
+   "market": 0.48,
+   "weight": 0.95
+  }
+ ],
+ "feeds": [
+  {
+   "id": 1,
+   "outlet_id": "bbc",
+   "url": "https://feeds.bbci.co.uk/news/rss.xml",
+   "kind": "top",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 2,
+   "outlet_id": "bbc",
+   "url": "https://feeds.bbci.co.uk/news/uk/rss.xml",
+   "kind": "section",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 3,
+   "outlet_id": "bbc",
+   "url": "https://feeds.bbci.co.uk/news/politics/rss.xml",
+   "kind": "section",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 4,
+   "outlet_id": "sky",
+   "url": "https://feeds.skynews.com/feeds/rss/home.xml",
+   "kind": "top",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 5,
+   "outlet_id": "sky",
+   "url": "https://feeds.skynews.com/feeds/rss/uk.xml",
+   "kind": "section",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 6,
+   "outlet_id": "sky",
+   "url": "https://feeds.skynews.com/feeds/rss/politics.xml",
+   "kind": "section",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 7,
+   "outlet_id": "guardian",
+   "url": "https://www.theguardian.com/uk/rss",
+   "kind": "top",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 8,
+   "outlet_id": "guardian",
+   "url": "https://www.theguardian.com/politics/rss",
+   "kind": "section",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 9,
+   "outlet_id": "telegraph",
+   "url": "https://www.telegraph.co.uk/rss.xml",
+   "kind": "top",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 10,
+   "outlet_id": "telegraph",
+   "url": "https://www.telegraph.co.uk/politics/rss.xml",
+   "kind": "section",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 11,
+   "outlet_id": "mail",
+   "url": "https://www.dailymail.co.uk/articles.rss",
+   "kind": "top",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 12,
+   "outlet_id": "mail",
+   "url": "https://www.dailymail.co.uk/news/index.rss",
+   "kind": "section",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 13,
+   "outlet_id": "express",
+   "url": "https://www.express.co.uk/posts/rss/1/news",
+   "kind": "top",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 14,
+   "outlet_id": "express",
+   "url": "https://www.express.co.uk/posts/rss/78/politics",
+   "kind": "section",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 15,
+   "outlet_id": "mirror",
+   "url": "https://www.mirror.co.uk/?service=rss",
+   "kind": "top",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 16,
+   "outlet_id": "mirror",
+   "url": "https://www.mirror.co.uk/news/?service=rss",
+   "kind": "section",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 17,
+   "outlet_id": "metro",
+   "url": "https://metro.co.uk/feed/",
+   "kind": "top",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 18,
+   "outlet_id": "metro",
+   "url": "https://metro.co.uk/news/feed/",
+   "kind": "section",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 19,
+   "outlet_id": "independent",
+   "url": "https://www.independent.co.uk/news/uk/rss",
+   "kind": "top",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 20,
+   "outlet_id": "independent",
+   "url": "https://www.independent.co.uk/news/uk/politics/rss",
+   "kind": "section",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 21,
+   "outlet_id": "i",
+   "url": "https://inews.co.uk/feed",
+   "kind": "top",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 22,
+   "outlet_id": "ft",
+   "url": "https://www.ft.com/rss/home/uk",
+   "kind": "top",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 23,
+   "outlet_id": "c4",
+   "url": "https://www.channel4.com/news/feed",
+   "kind": "top",
+   "curated": null,
+   "active": 1
+  },
+  {
+   "id": 24,
+   "outlet_id": "sun",
+   "url": "https://www.thesun.co.uk/feed/",
+   "kind": "top",
+   "curated": null,
+   "active": 0
+  },
+  {
+   "id": 25,
+   "outlet_id": "sun",
+   "url": "https://www.thesun.co.uk/news/feed/",
+   "kind": "section",
+   "curated": null,
+   "active": 0
+  },
+  {
+   "id": 26,
+   "outlet_id": "times",
+   "url": "https://news.google.com/rss/search?q=site:thetimes.com/uk+when:1d&hl=en-GB&gl=GB&ceid=GB:en",
+   "kind": "section",
+   "curated": 0,
+   "active": 1
+  },
+  {
+   "id": 27,
+   "outlet_id": "times",
+   "url": "https://news.google.com/rss/search?q=site:thetimes.com/uk/politics+when:1d&hl=en-GB&gl=GB&ceid=GB:en",
+   "kind": "section",
+   "curated": 0,
+   "active": 1
+  },
+  {
+   "id": 28,
+   "outlet_id": "times",
+   "url": "https://news.google.com/rss/search?q=site:thetimes.com/comment+when:1d&hl=en-GB&gl=GB&ceid=GB:en",
+   "kind": "section",
+   "curated": 0,
+   "active": 1
+  },
+  {
+   "id": 29,
+   "outlet_id": "sun",
+   "url": "https://news.google.com/rss/search?q=site:thesun.co.uk/news+when:1d&hl=en-GB&gl=GB&ceid=GB:en",
+   "kind": "section",
+   "curated": 0,
+   "active": 1
+  }
+ ]
+}

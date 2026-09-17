@@ -37,7 +37,8 @@ def load_articles(con, hours):
     cut = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(
         timespec="seconds")
     return [dict(r) for r in con.execute(
-        "SELECT id, outlet_id, title, standfirst, published_at, first_seen, url_canon "
+        "SELECT id, outlet_id, title, standfirst, published_at, first_seen, "
+        "url_canon, vector, vector_model "
         "FROM article WHERE COALESCE(published_at, first_seen) >= ? "
         "ORDER BY COALESCE(published_at, first_seen)", (cut,))]
 
@@ -122,9 +123,27 @@ def run(hours=WINDOW_HOURS, threshold=None, dry=False, db_path=None):
         print("nothing left after filtering")
         return 1
 
-    texts = [(a["title"] + " " + (a["standfirst"] or "")).strip() for a in arts]
-    vecs, how = embed.best_batch(texts)
-    vecs_by_id = {a["id"]: v for a, v in zip(arts, vecs)}
+    # Vectors are computed once, when an article first arrives, and kept.
+    # Before this, every run re-read the whole window through the model: 130
+    # seconds to arrive at numbers we already had.
+    how = embed.which(prefer_sentence=True)
+    todo = [a for a in arts
+            if not a["vector"] or a["vector_model"] != how]
+    if todo:
+        texts = [(a["title"] + " " + (a["standfirst"] or "")).strip() for a in todo]
+        fresh, how = embed.best_batch(texts)
+        for a, v in zip(todo, fresh):
+            con.execute("UPDATE article SET vector=?, vector_model=? WHERE id=?",
+                        (embed.pack(v), how, a["id"]))
+        con.commit()
+        got = {a["id"]: v for a, v in zip(todo, fresh)}
+    else:
+        got = {}
+    print(f"  vectorised {len(todo)} new, reused {len(arts) - len(todo)}")
+
+    vecs_by_id = {a["id"]: (got.get(a["id"]) or embed.unpack(a["vector"]))
+                  for a in arts}
+    vecs = [vecs_by_id[a["id"]] for a in arts]
     items = [{"id": a["id"], "outlet_id": a["outlet_id"], "vec": v,
               "published_at": a["published_at"] or a["first_seen"]}
              for a, v in zip(arts, vecs)]

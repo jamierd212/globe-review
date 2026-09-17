@@ -99,8 +99,14 @@ def cmd_poll(db_path=None):
         if err:
             totals["failed"] += 1
 
+        # Position counts stored items, not items offered. A feed that lists
+        # the same article twice used to consume a position number without
+        # writing a row, leaving a hole in the ranking - which then could not
+        # be reproduced from the archive, because a list of ids renumbers
+        # densely when it is read back.
         n_new = 0
-        for pos, it in enumerate(items):
+        pos = -1
+        for it in items:
             if not it["url_canon"]:
                 continue
             r = con.execute(
@@ -118,10 +124,12 @@ def cmd_poll(db_path=None):
                      dedup.title_sig(it["title"]))).lastrowid
                 n_new += 1
             # the row that cannot be reconstructed later
-            con.execute(
+            cur2 = con.execute(
                 "INSERT OR IGNORE INTO observation "
                 "(poll_id, feed_id, article_id, polled_at, position) VALUES (?,?,?,?,?)",
-                (poll_id, feed_id, article_id, stamp, pos))
+                (poll_id, feed_id, article_id, stamp, pos + 1))
+            if cur2.rowcount:
+                pos += 1
 
         con.execute("UPDATE poll SET n_new=? WHERE id=?", (n_new, poll_id))
         totals["items"] += len(items)
