@@ -118,10 +118,50 @@ def money(tin, tout):
     return tin / 1e6 * PRICE_IN + tout / 1e6 * PRICE_OUT
 
 
+# ------------------------------------------------------------ corrections ---
+
+CORRECTIONS = os.path.join(ROOT, "corrections.json")
+
+
+def apply_corrections(con, path=CORRECTIONS):
+    """Hand fixes from corrections.json. Safe to run every time.
+
+    A correction names the story by id AND name, and is skipped if they
+    disagree - an id pointing at a different story after a rebuild must not
+    quietly retarget the wrong thing.
+    """
+    if not os.path.exists(path):
+        return 0
+    fixes = json.load(open(path, encoding="utf-8")).get("stories", [])
+    changed = 0
+    for c in fixes:
+        row = con.execute("SELECT name, issue_id, target FROM story WHERE id=?",
+                          (c["id"],)).fetchone()
+        if row is None:
+            continue
+        if row["name"] != c["name"]:
+            print(f"  correction for story {c['id']} skipped: it is now called "
+                  f"{row['name']!r}, not {c['name']!r}")
+            continue
+        if (row["issue_id"], row["target"]) != (c["issue_id"], c["target"]):
+            con.execute("UPDATE story SET issue_id=?, target=?, target_conf='corrected' "
+                        "WHERE id=?", (c["issue_id"], c["target"], c["id"]))
+            changed += 1
+        # scores made against the old target are measuring the wrong thing
+        gone = con.execute("DELETE FROM article_score WHERE story_id=? AND scored_at < ?",
+                           (c["id"], c["made"])).rowcount
+        if gone:
+            print(f"  story {c['id']} {c['name']!r}: target is now {c['target']!r}, "
+                  f"{gone} old scores dropped for re-scoring")
+    con.commit()
+    return changed
+
+
 # -------------------------------------------------------------------- tag ---
 
 def cmd_tag(limit=None, dry=False, db_path=None, rename=False):
     con = db.connect(db_path)
+    apply_corrections(con)
     issues = json.load(open(os.path.join(ROOT, "taxonomy.json"),
                             encoding="utf-8"))["issues"]
     # `expect` is a testing prior and must not reach the model
@@ -180,6 +220,7 @@ def cmd_tag(limit=None, dry=False, db_path=None, rename=False):
 
 def cmd_score(limit=None, dry=False, db_path=None, batch=False):
     con = db.connect(db_path)
+    apply_corrections(con)
     ver = P.rubric_version()
     todo = [dict(r) for r in con.execute(
         "SELECT a.id, a.title, a.standfirst, a.url_canon, s.id AS story_id, "

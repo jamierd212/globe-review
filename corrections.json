@@ -1,0 +1,13 @@
+{
+  "_about": "Hand corrections to stories, applied on every run before scoring. Kept in git rather than made in the database, because the live database lives on GitHub and is rebuilt from the archive when its cache is cold - a fix made anywhere else would be lost. Scores made before `made` are thrown away and the articles scored again.",
+  "stories": [
+    {
+      "id": 137,
+      "name": "Letby inquiry findings released",
+      "issue_id": null,
+      "target": "the Thirlwall inquiry and its findings",
+      "made": "2026-09-24T08:45:00+00:00",
+      "why": "Filed under NHS winter pressures and inherited 'the current state of the NHS'. Every paper is hostile to the hospital's managers, so that tells us nothing; where papers actually split is over the inquiry itself (Hitchens: it should never have been held; Guardian: it should have waited for the case review)."
+    }
+  ]
+}

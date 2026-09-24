@@ -114,7 +114,13 @@ Filing rules:
 
 - Pick the single best fit. If nothing fits, return null. Sport, showbiz, \
 lifestyle, puzzles and service journalism should return null.
-- When you pick a subject, copy its target verbatim.
+- **File a story under a subject only if the subject's target is what this \
+story is actually about** - if favouring or opposing that target is the \
+disagreement in these headlines. Being near the subject is not enough. The \
+Lucy Letby inquiry involves the NHS, but it is not about "the current state of \
+the NHS": filed there, every score would measure the wrong thing. Return null \
+and write its own target instead.
+- When you do pick a subject, copy its target verbatim.
 - When you return null, write a target for this story yourself: name the \
 specific thing being judged, not the field. For "UK sanctions on Israeli \
 settlements" the target is "the sanctions", not "the Middle East". Getting \
