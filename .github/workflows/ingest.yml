@@ -12,6 +12,10 @@ on:
         description: "Re-score everything against the current rubric"
         type: boolean
         default: false
+      hours:
+        description: "How many hours back to group into stories (72 normally; 200 to fill a gap)"
+        type: number
+        default: 72
 
 # one run at a time: two runs writing the same SQLite file would corrupt it,
 # and a skipped hour is a far cheaper loss than a corrupted archive
@@ -94,7 +98,7 @@ jobs:
         run: python3 -m ingest.run poll
 
       - name: Group articles into stories
-        run: python3 -m cluster.run || echo "clustering failed, continuing"
+        run: python3 -m cluster.run --hours ${{ inputs.hours || 72 }} || echo "clustering failed, continuing"
 
       - name: Name and file new stories
         env:
