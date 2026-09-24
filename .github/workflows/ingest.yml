@@ -57,8 +57,13 @@ jobs:
       # vectors and makes clustering seconds rather than minutes. If the cache
       # is cold the shards rebuild it - slower, because the vectors then have
       # to be recomputed, but nothing is lost.
+      #
+      # Restore and save are separate steps so the save can run even when
+      # something failed. With the combined action the database is only kept
+      # if the whole job passed - so one failed check threw away that hour's
+      # articles, which cannot be collected again.
       - name: Carry the database between runs
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: data/ingest.sqlite
           key: db-${{ github.run_id }}
@@ -126,7 +131,13 @@ jobs:
 
       # Prove it can be read back, every run. An archive nobody has restored
       # is not an archive.
+      #
+      # A failure here turns the run red, but only at the very end: the
+      # archive is still committed and the database still kept, because what
+      # was collected this hour is worth more than a clean record.
       - name: Check the archive restores
+        id: check
+        continue-on-error: true
         run: python3 -m ingest.archive check
 
       - name: Commit
@@ -145,10 +156,24 @@ jobs:
       # A working copy of the database as well, for convenience only - the
       # shards above are the record, and this can be rebuilt from them with
       # `python3 -m ingest.archive restore`.
+      - name: Save the database for the next run
+        if: always() && hashFiles('data/ingest.sqlite') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: data/ingest.sqlite
+          key: db-${{ github.run_id }}
+
       - name: Keep a working copy of the database
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: working-db-${{ github.run_number }}
           path: data/ingest.sqlite
           retention-days: 30
           if-no-files-found: warn
+
+      - name: Report a failed archive check
+        if: steps.check.outcome == 'failure'
+        run: |
+          echo "the archive does not match the database - see 'Check the archive restores'"
+          exit 1

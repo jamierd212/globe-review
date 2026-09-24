@@ -47,7 +47,7 @@ def load_stories(con):
     out = []
     for r in con.execute(
             "SELECT id, centroid, first_seen, last_seen, status, n_articles "
-            "FROM story WHERE status != 'closed'"):
+            "FROM story WHERE status NOT IN ('closed', 'merged')"):
         if not r["centroid"]:
             continue
         vec = [float(x) for x in r["centroid"].decode().split(",")]
@@ -56,6 +56,46 @@ def load_stories(con):
                     "last_day": _day_index(r["last_seen"]),
                     "status": r["status"], "n_articles": r["n_articles"]})
     return out
+
+
+def rebuild_centroids(con, how):
+    """Give back a fingerprint to any open story that has lost it.
+
+    Fingerprints are working state, not history: the archive does not keep
+    them, so a database rebuilt from it has none, and a story without one can
+    never be recognised again. Rebuilt as the average of the story's own
+    articles, which is close to what drifting towards each day's coverage
+    produces anyway.
+    """
+    lost = [r["id"] for r in con.execute(
+        "SELECT id FROM story WHERE status NOT IN ('closed', 'merged') "
+        "AND centroid IS NULL")]
+    if not lost:
+        return 0
+    arts = [dict(r) for r in con.execute(
+        "SELECT a.id, a.title, a.standfirst, a.vector, a.vector_model, m.story_id "
+        "FROM article a JOIN story_member m ON m.article_id = a.id "
+        f"WHERE m.story_id IN ({','.join('?' * len(lost))})", lost)]
+    todo = [a for a in arts if not a["vector"] or a["vector_model"] != how]
+    if todo:
+        fresh, got = embed.best_batch(
+            [(a["title"] + " " + (a["standfirst"] or "")).strip() for a in todo])
+        for a, v in zip(todo, fresh):
+            a["vec"] = v
+            con.execute("UPDATE article SET vector=?, vector_model=? WHERE id=?",
+                        (embed.pack(v), got, a["id"]))
+    by_story = {}
+    for a in arts:
+        v = a.get("vec") or embed.unpack(a["vector"])
+        by_story.setdefault(a["story_id"], []).append(v)
+    for sid, vs in by_story.items():
+        c = G._centroid(vs)
+        con.execute("UPDATE story SET centroid=? WHERE id=?",
+                    (",".join(f"{x:.5f}" for x in c).encode(), sid))
+    con.commit()
+    print(f"  rebuilt fingerprints for {len(by_story)} stories "
+          f"({len(todo)} articles re-read)")
+    return len(by_story)
 
 
 def name_story(members, articles, vecs_by_id=None):
@@ -164,10 +204,12 @@ def run(hours=WINDOW_HOURS, threshold=None, dry=False, db_path=None):
               f"median outlets {sp['median_outlets']}")
 
     today = _day_index(datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    rebuild_centroids(con, how)
     prior = load_stories(con)
+    first_id = (con.execute("SELECT MAX(id) FROM story").fetchone()[0] or 0) + 1
     assigned, updated = I.assign(
         [{"key": s["key"], "centroid": s["centroid"], "n": s["n"]} for s in stories],
-        prior, today)
+        prior, today, first_id=first_id)
 
     lt = I.lifetimes(updated)
     if lt:
@@ -188,6 +230,7 @@ def run(hours=WINDOW_HOURS, threshold=None, dry=False, db_path=None):
     by_key = {s["key"]: s for s in stories}
     for st in updated:
         if st["status"] == "merged":
+            con.execute("UPDATE story SET status='merged' WHERE id=?", (st["id"],))
             continue
         key = next((k for k, v in assigned.items() if v == st["id"]), None)
         grp = by_key.get(key)
@@ -202,10 +245,13 @@ def run(hours=WINDOW_HOURS, threshold=None, dry=False, db_path=None):
             # headline, ie one paper's words. The globe was carrying "The
             # Guardian view on Reform UK: crypto billionaires must be stopped"
             # as a neutral label on eleven papers' coverage.
-            con.execute(
-                "UPDATE story SET last_seen=?, status=?, centroid=?, n_articles=? "
-                "WHERE id=?",
-                (now, st["status"], cen, st.get("n_articles", 0), st["id"]))
+            # last_seen moves only if the story was actually in today's
+            # news. Stamping every story with `now` on every run meant nothing
+            # ever went quiet, so nothing ever closed.
+            if st["last_day"] == today:
+                con.execute("UPDATE story SET last_seen=? WHERE id=?", (now, st["id"]))
+            con.execute("UPDATE story SET status=?, centroid=? WHERE id=?",
+                        (st["status"], cen, st["id"]))
         else:
             con.execute(
                 "INSERT INTO story (id, name, target, issue_id, first_seen, "
@@ -220,6 +266,11 @@ def run(hours=WINDOW_HOURS, threshold=None, dry=False, db_path=None):
                     "VALUES (?,?,?) ON CONFLICT(article_id) DO UPDATE SET "
                     "story_id=excluded.story_id, assigned_at=excluded.assigned_at",
                     (m, st["id"], now))
+    # Counted from the memberships, not accumulated. The window is 72 hours
+    # and the job runs hourly, so adding each run's cluster size counted the
+    # same articles about fifty times over.
+    con.execute("UPDATE story SET n_articles = (SELECT COUNT(*) FROM story_member m "
+                "WHERE m.story_id = story.id)")
     con.commit()
     live = con.execute("SELECT COUNT(*) FROM story WHERE status='live'").fetchone()[0]
     print(f"\nwrote {live} live stories")

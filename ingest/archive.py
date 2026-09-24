@@ -70,6 +70,51 @@ def _append(month, name, rows):
     return len(rows)
 
 
+STORY_FIELDS = ("name", "target", "issue_id", "first_seen", "last_seen",
+                "status", "target_conf")
+SCORE_FIELDS = ("story_id", "stance", "tone", "confidence", "quote", "desk",
+                "reason", "rubric_version", "model", "scored_at")
+
+
+def _story_sig(r):
+    """What counts as a change to a story. last_seen is compared by the DAY:
+    it moves every hour a story is running, and a line per story per hour
+    would make this the biggest file in the archive for no gain - story
+    lifetimes are counted in whole days. n_articles is left out because it is
+    derived, and rebuilt from the memberships on restore."""
+    if r is None:
+        return None
+    return tuple((r.get(f) or "")[:10] if f == "last_seen" else r.get(f)
+                 for f in STORY_FIELDS)
+
+
+def _score_sig(r):
+    return None if r is None else tuple(r.get(f) for f in SCORE_FIELDS)
+
+
+def _archived_state():
+    """Stories, memberships and scores as the shards currently have them,
+    replayed in the order they were written."""
+    stories, members, scores = {}, {}, {}
+    for month in sorted(os.listdir(SHARDS)) if os.path.isdir(SHARDS) else []:
+        d = os.path.join(SHARDS, month)
+        if not os.path.isdir(d):
+            continue
+        for line in _read(os.path.join(d, "stories.jsonl")):
+            stories[line["id"]] = line
+            for aid in line.get("members") or []:      # the first format
+                members[aid] = line["id"]
+        for line in _read(os.path.join(d, "members.jsonl")):
+            members[line["article_id"]] = line["story_id"]
+        for line in _read(os.path.join(d, "scores.jsonl")):
+            k = (line["article_id"], line["issue_id"])
+            if line.get("deleted"):
+                scores.pop(k, None)
+            else:
+                scores[k] = line
+    return stories, members, scores
+
+
 # ----------------------------------------------------------------- export ---
 
 def export(db_path=None, full=False):
@@ -133,43 +178,52 @@ def export(db_path=None, full=False):
     if polls:
         _set_cursor(con, "poll", polls[-1]["id"])
 
-    # stories: state changes, appended rather than overwritten, so the history
-    # of a name or a filing decision survives
-    since = _cursor(con, "story_seen")
-    rows = [dict(r) for r in con.execute(
-        "SELECT id, name, target, issue_id, first_seen, last_seen, status, "
-        "n_articles, target_conf FROM story WHERE rowid > ? ORDER BY rowid", (since,))]
+    # Stories, memberships and scores are different: they CHANGE. A story
+    # gains articles, goes quiet, gets a corrected target; a score is redone.
+    # The first version exported each row once, when it was new, so every
+    # later change was silently missing - found when an article joining an
+    # existing story never reached the archive and the rebuilt database came
+    # back with 1,346 fewer memberships than the live one.
+    #
+    # So these are exported by comparison: replay what the archive already
+    # says, compare it with the database, and append a line for anything that
+    # differs - including a deletion line for a row that has gone. Replaying
+    # is cheap (these files are small next to articles and polls) and it
+    # cannot drift, because there is no cursor to lose.
     stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    members = {}
-    for r in con.execute("SELECT story_id, article_id FROM story_member"):
-        members.setdefault(r["story_id"], []).append(r["article_id"])
-    for r in rows:
-        r["members"] = sorted(members.get(r["id"], []))
-        r["exported_at"] = stamp
-    by_month = {}
-    for r in rows:
-        by_month.setdefault(_month(r["first_seen"]), []).append(r)
-    for m, rs in by_month.items():
-        written["stories"] = written.get("stories", 0) + _append(m, "stories.jsonl", rs)
-    if rows:
-        _set_cursor(con, "story_seen",
-                    con.execute("SELECT MAX(rowid) FROM story").fetchone()[0] or 0)
+    month = _month(stamp)
+    had_stories, had_members, had_scores = _archived_state()
 
-    # scores
-    since = _cursor(con, "score_rowid")
-    rows = [dict(r) for r in con.execute(
-        "SELECT rowid AS rid, article_id, issue_id, story_id, stance, tone, "
-        "confidence, quote, desk, reason, rubric_version, model, scored_at "
-        "FROM article_score WHERE rowid > ? ORDER BY rowid", (since,))]
-    by_month = {}
-    for r in rows:
-        rid = r.pop("rid")
-        by_month.setdefault(_month(r["scored_at"]), []).append(r)
-    for m, rs in by_month.items():
-        written["scores"] = written.get("scores", 0) + _append(m, "scores.jsonl", rs)
-    if rows:
-        _set_cursor(con, "score_rowid",
-                    con.execute("SELECT MAX(rowid) FROM article_score").fetchone()[0] or 0)
+    rows = []
+    for r in con.execute(f"SELECT id, n_articles, {', '.join(STORY_FIELDS)} "
+                         "FROM story ORDER BY id"):
+        r = dict(r)
+        if _story_sig(had_stories.get(r["id"])) != _story_sig(r):
+            r["exported_at"] = stamp
+            rows.append(r)
+    written["stories"] = _append(month, "stories.jsonl", rows)
+
+    rows = []
+    for r in con.execute("SELECT article_id, story_id FROM story_member "
+                         "ORDER BY article_id"):
+        if had_members.get(r["article_id"]) != r["story_id"]:
+            rows.append({"article_id": r["article_id"], "story_id": r["story_id"],
+                         "at": stamp})
+    written["members"] = _append(month, "members.jsonl", rows)
+
+    rows, live_keys = [], set()
+    for r in con.execute(f"SELECT article_id, issue_id, {', '.join(SCORE_FIELDS)} "
+                         "FROM article_score ORDER BY rowid"):
+        r = dict(r)
+        k = (r["article_id"], r["issue_id"])
+        live_keys.add(k)
+        if _score_sig(had_scores.get(k)) != _score_sig(r):
+            rows.append(r)
+    for k in sorted(set(had_scores) - live_keys, key=lambda k: (k[0], k[1] or "")):
+        rows.append({"article_id": k[0], "issue_id": k[1], "deleted": True,
+                     "at": stamp})
+    written["scores"] = _append(month, "scores.jsonl", rows)
+    written = {k: v for k, v in written.items() if v}
 
     con.commit()
     con.close()
@@ -236,21 +290,35 @@ def restore(db_path, quiet=False):
                 "last_seen,status,n_articles,target_conf) VALUES (?,?,?,?,?,?,?,?,?)",
                 (line["id"], line["name"], line["target"], line["issue_id"],
                  line["first_seen"], line["last_seen"], line["status"],
-                 line["n_articles"], line.get("target_conf")))
-            for aid in line.get("members") or []:
+                 line.get("n_articles") or 0, line.get("target_conf")))
+            for aid in line.get("members") or []:       # the first format
                 con.execute("INSERT OR REPLACE INTO story_member "
                             "(article_id,story_id,assigned_at) VALUES (?,?,?)",
                             (aid, line["id"], line["last_seen"]))
             counts["stories"] += 1
+        for line in _read(os.path.join(d, "members.jsonl")):
+            con.execute("INSERT OR REPLACE INTO story_member "
+                        "(article_id,story_id,assigned_at) VALUES (?,?,?)",
+                        (line["article_id"], line["story_id"], line["at"]))
         for line in _read(os.path.join(d, "scores.jsonl")):
+            if line.get("deleted"):
+                con.execute("DELETE FROM article_score WHERE article_id=? "
+                            "AND issue_id IS ?", (line["article_id"], line["issue_id"]))
+                continue
             con.execute(
-                "INSERT OR REPLACE INTO article_score (article_id,issue_id,story_id,"
+                "DELETE FROM article_score WHERE article_id=? AND issue_id IS ?",
+                (line["article_id"], line["issue_id"]))
+            con.execute(
+                "INSERT INTO article_score (article_id,issue_id,story_id,"
                 "stance,tone,confidence,quote,desk,reason,rubric_version,model,scored_at)"
                 " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (line["article_id"], line["issue_id"], line["story_id"], line["stance"],
                  line["tone"], line["confidence"], line["quote"], line["desk"],
                  line["reason"], line["rubric_version"], line["model"], line["scored_at"]))
             counts["scores"] += 1
+    # derived, so rebuilt rather than trusted
+    con.execute("UPDATE story SET n_articles = (SELECT COUNT(*) FROM story_member m "
+                "WHERE m.story_id = story.id)")
     # Tell the rebuilt database what is already in the shards. Without this
     # the next export sees empty cursors, decides nothing has ever been
     # written, and appends the whole archive again as duplicate lines - which
@@ -259,9 +327,7 @@ def restore(db_path, quiet=False):
                 "(key TEXT PRIMARY KEY, value INTEGER NOT NULL)")
     for key, q in (
             ("article", "SELECT MAX(id) FROM article"),
-            ("poll", "SELECT MAX(id) FROM poll"),
-            ("story_seen", "SELECT MAX(rowid) FROM story"),
-            ("score_rowid", "SELECT MAX(rowid) FROM article_score")):
+            ("poll", "SELECT MAX(id) FROM poll")):
         _set_cursor(con, key, con.execute(q).fetchone()[0] or 0)
     con.commit()
     if not quiet:
@@ -282,6 +348,18 @@ def _read(path):
 
 # ------------------------------------------------------------------ check ---
 
+def _mark(name, good, detail):
+    print(f"  {'ok ' if good else 'BAD'} {name:<16} {detail}")
+    return good
+
+
+def _diff(a, b):
+    if a == b:
+        return ""
+    k = sorted(set(a) ^ set(b) | {x for x in a if x in b and a[x] != b[x]}, key=str)
+    return f"   ({len(k)} differ, e.g. {k[:3]})"
+
+
 def check(db_path=None):
     """Rebuild into a scratch database and compare. An archive that has never
     been read back is not known to work."""
@@ -292,14 +370,29 @@ def check(db_path=None):
     back = db.connect(tmp)
 
     ok = True
-    for table in ("article", "poll", "observation", "story", "article_score",
-                  "story_member"):
-        a = live.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-        b = back.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-        mark = "ok " if a == b else "BAD"
-        if a != b:
-            ok = False
-        print(f"  {mark} {table:<16} live {a:>7}   restored {b:>7}")
+    for table in ("article", "poll", "observation"):
+        x = live.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        y = back.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        ok &= _mark(table, x == y, f"live {x:>7}   restored {y:>7}")
+
+    # the tables that change are compared row by row: counting them is how
+    # the missing memberships got through
+    def rows(con, q, sig):
+        return {tuple(r[:2]) if sig is _score_sig else r[0]: sig(dict(r))
+                for r in con.execute(q)}
+    qs = f"SELECT id, {', '.join(STORY_FIELDS)} FROM story"
+    a_, b_ = rows(live, qs, _story_sig), rows(back, qs, _story_sig)
+    ok &= _mark("story", a_ == b_, f"live {len(a_):>7}   restored {len(b_):>7}"
+                + _diff(a_, b_))
+    qm = "SELECT article_id, story_id FROM story_member"
+    a_ = {r[0]: r[1] for r in live.execute(qm)}
+    b_ = {r[0]: r[1] for r in back.execute(qm)}
+    ok &= _mark("story_member", a_ == b_, f"live {len(a_):>7}   restored {len(b_):>7}"
+                + _diff(a_, b_))
+    qc = f"SELECT article_id, issue_id, {', '.join(SCORE_FIELDS)} FROM article_score"
+    a_, b_ = rows(live, qc, _score_sig), rows(back, qc, _score_sig)
+    ok &= _mark("article_score", a_ == b_, f"live {len(a_):>7}   restored {len(b_):>7}"
+                + _diff(a_, b_))
 
     # the positions are the part that cannot be collected again, so compare
     # them properly rather than just counting

@@ -146,6 +146,72 @@ def test_a_rebuilt_database_still_takes_new_rows():
     assert again.get("articles") == 1, again
     shutil.rmtree(tmp)
 
+def _restored(tmp, live):
+    back = os.path.join(tmp, "back.sqlite")
+    archive.restore(back, quiet=True)
+    return db.connect(back)
+
+def test_articles_joining_an_existing_story_are_archived():
+    """The failure that stopped the first live run: an article added to a
+    story after the story was first exported never reached the archive."""
+    tmp = tempfile.mkdtemp(); _isolate(tmp)
+    live = _build(tmp); archive.export(live)
+    con = db.connect(live)
+    con.execute("INSERT INTO story_member (article_id,story_id,assigned_at) "
+                "VALUES (4,1,'2026-09-04T06:00:00+00:00')")
+    con.commit(); con.close()
+    archive.export(live)
+    back = _restored(tmp, live)
+    got = sorted(r[0] for r in back.execute(
+        "SELECT article_id FROM story_member WHERE story_id=1"))
+    assert got == [1, 2, 3, 4], got
+    assert back.execute("SELECT n_articles FROM story WHERE id=1").fetchone()[0] == 4
+    assert archive.check(live)
+    shutil.rmtree(tmp)
+
+def test_a_changed_story_is_archived_without_editing_old_lines():
+    tmp = tempfile.mkdtemp(); _isolate(tmp)
+    live = _build(tmp); archive.export(live)
+    path = os.path.join(archive.SHARDS, "2026-09", "stories.jsonl")
+    before = open(path).read() if os.path.exists(path) else ""
+    con = db.connect(live)
+    con.execute("UPDATE story SET target='the corrected thing', status='dormant' "
+                "WHERE id=1")
+    con.commit(); con.close()
+    archive.export(live)
+    back = _restored(tmp, live)
+    r = back.execute("SELECT target, status FROM story WHERE id=1").fetchone()
+    assert tuple(r) == ("the corrected thing", "dormant"), tuple(r)
+    if before:
+        assert open(path).read().startswith(before), "an existing line changed"
+    shutil.rmtree(tmp)
+
+def test_redone_and_deleted_scores_are_archived():
+    tmp = tempfile.mkdtemp(); _isolate(tmp)
+    live = _build(tmp); archive.export(live)
+    con = db.connect(live)
+    con.execute("UPDATE article_score SET stance=1.0, scored_at='2026-09-05' "
+                "WHERE article_id=1")
+    con.execute("DELETE FROM article_score WHERE article_id=2")
+    con.commit(); con.close()
+    archive.export(live)
+    back = _restored(tmp, live)
+    got = {r[0]: r[1] for r in back.execute("SELECT article_id, stance FROM article_score")}
+    assert got == {1: 1.0, 3: -1.0}, got
+    assert archive.check(live)
+    shutil.rmtree(tmp)
+
+def test_an_hourly_last_seen_does_not_grow_the_archive():
+    """last_seen moves every hour a story runs. A line per story per hour would
+    make stories the biggest file in the archive for nothing."""
+    tmp = tempfile.mkdtemp(); _isolate(tmp)
+    live = _build(tmp); archive.export(live)
+    con = db.connect(live)
+    con.execute("UPDATE story SET last_seen='2026-09-03T09:00:00+00:00' WHERE id=1")
+    con.commit(); con.close()
+    assert not archive.export(live).get("stories")
+    shutil.rmtree(tmp)
+
 if __name__ == "__main__":
     fails = 0
     for n, fn in sorted(globals().items()):

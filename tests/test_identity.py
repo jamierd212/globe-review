@@ -148,6 +148,14 @@ def test_a_running_story_is_never_renamed():
     assert "name" in src[src.index("else:", src.index("if row:")):], \
         "a newly born story still needs a name"
 
+def test_new_stories_never_reuse_an_id():
+    """After a rebuild no open story has a fingerprint, so `stories` is empty.
+    Ids must still start above every story ever made, or today's news is
+    written over the oldest stories under their names."""
+    a, out = I.assign([{"key": "g1", "centroid": [1.0, 0.0], "n": 3}], [], 100,
+                      first_id=321)
+    assert a["g1"] == 321, a
+
 if __name__ == "__main__":
     fails = 0
     for n, fn in sorted(globals().items()):

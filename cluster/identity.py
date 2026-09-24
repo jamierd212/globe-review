@@ -63,7 +63,7 @@ def blend(old, new, drift=DRIFT):
 
 
 def assign(clusters, stories, day, match=MATCH, merge=MERGE,
-           dormant_days=DORMANT_DAYS, drift=DRIFT):
+           dormant_days=DORMANT_DAYS, drift=DRIFT, first_id=1):
     """Map today's clusters onto yesterday's stories.
 
     clusters: [{key, centroid, n}]        - today, from the clusterer
@@ -95,7 +95,12 @@ def assign(clusters, stories, day, match=MATCH, merge=MERGE,
         assignments[ckey] = sid
 
     by_id = {s["id"]: s for s in stories}
-    next_id = max([s["id"] for s in stories], default=0) + 1
+    # New ids come from the caller, who can see every story ever made. Taking
+    # them from `stories` - only the ones still open, with a fingerprint -
+    # handed out ids that already belonged to closed stories, and after a
+    # rebuild from the archive (no fingerprints at all) started again at 1:
+    # the morning's news was written over the oldest stories, under their names.
+    next_id = max(max([s["id"] for s in stories], default=0) + 1, first_id)
 
     for c in clusters:
         if c["key"] in assignments:
