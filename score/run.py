@@ -255,15 +255,32 @@ def cmd_score(limit=None, dry=False, db_path=None, batch=False):
 
 # ------------------------------------------------------------------ batch ---
 
-def score_batched(cli, todo, system, ver, con, poll_every=20):
+def _pending_table(con):
+    con.execute("CREATE TABLE IF NOT EXISTS score_batch (id TEXT PRIMARY KEY, "
+                "sent_at TEXT NOT NULL, rubric_version TEXT NOT NULL, "
+                "items TEXT NOT NULL, collected_at TEXT)")
+
+
+def score_batched(cli, todo, system, ver, con, poll_every=20, wait=600):
     """The same scoring, sent as one batch at half price.
 
     An hourly job does not care whether an answer comes back in two seconds or
     twenty minutes, and halving the bill is the difference between this costing
     $24 a month and $12.
+
+    But it must not wait for ever. Anthropic promises a batch within 24 hours,
+    not within the hour, and the job is killed at 45 minutes - taking that
+    hour's collected articles with it, because nothing after this step runs.
+    So the batch id is written down, the job waits at most `wait` seconds, and
+    anything still running is collected by whichever later run finds it done.
     """
     import time as _t
     from datetime import datetime as _dt, timezone as _tz
+
+    _pending_table(con)
+    if collect_pending(cli, con) == "running":
+        print("an earlier batch is still running - not sending another")
+        return 0
 
     reqs = []
     for t in todo:
@@ -281,19 +298,55 @@ def score_batched(cli, todo, system, ver, con, poll_every=20):
     print(f"sending {len(reqs)} in one batch")
     batch = cli.messages.batches.create(requests=reqs)
     print(f"  batch {batch.id}")
-    while True:
+    items = [{k: t[k] for k in ("id", "issue_id", "story_id", "url_canon")}
+             for t in todo]
+    con.execute("INSERT INTO score_batch (id, sent_at, rubric_version, items) "
+                "VALUES (?,?,?,?)",
+                (batch.id, _dt.now(_tz.utc).isoformat(timespec="seconds"), ver,
+                 json.dumps(items)))
+    con.commit()
+
+    deadline = _t.monotonic() + wait
+    while _t.monotonic() < deadline:
         b = cli.messages.batches.retrieve(batch.id)
-        c = b.request_counts
         if b.processing_status == "ended":
             break
+        c = b.request_counts
         print(f"  {c.succeeded} done, {c.processing} running, {c.errored} errored")
         _t.sleep(poll_every)
+    collect_pending(cli, con)
+    return 0
 
-    by_id = {f"a{t['id']}": t for t in todo}
+
+def collect_pending(cli, con):
+    """Write the results of any finished batch. 'running' if one is not done."""
+    from datetime import datetime as _dt, timezone as _tz
+
+    _pending_table(con)
+    state = "clear"
+    for row in con.execute("SELECT id, rubric_version, items FROM score_batch "
+                           "WHERE collected_at IS NULL ORDER BY sent_at").fetchall():
+        b = cli.messages.batches.retrieve(row["id"])
+        if b.processing_status != "ended":
+            print(f"  batch {row['id']} still running - will collect it next run")
+            state = "running"
+            continue
+        _write_results(cli, con, row["id"], json.loads(row["items"]),
+                       row["rubric_version"])
+        con.execute("UPDATE score_batch SET collected_at=? WHERE id=?",
+                    (_dt.now(_tz.utc).isoformat(timespec="seconds"), row["id"]))
+        con.commit()
+    return state
+
+
+def _write_results(cli, con, batch_id, items, ver):
+    from datetime import datetime as _dt, timezone as _tz
+
+    by_id = {f"a{t['id']}": t for t in items}
     now = _dt.now(_tz.utc).isoformat(timespec="seconds")
     kept = abstained = failed = 0
     tin = tout = 0
-    for res in cli.messages.batches.results(batch.id):
+    for res in cli.messages.batches.results(batch_id):
         t = by_id.get(res.custom_id)
         if t is None or res.result.type != "succeeded":
             failed += 1
@@ -320,9 +373,8 @@ def score_batched(cli, todo, system, ver, con, poll_every=20):
              out.get("confidence"), out.get("quote"),
              desk_from_url(t["url_canon"]), out.get("reason"), ver, MODEL, now))
     con.commit()
-    print(f"\n{kept} scored, {abstained} abstained, {failed} failed")
+    print(f"\nbatch {batch_id}: {kept} scored, {abstained} abstained, {failed} failed")
     print(f"{tin + tout:,} tokens, ${money(tin, tout) / 2:.2f} at batch price")
-    return 0
 
 
 # words that take a side. A name carrying one of these is measuring its own
