@@ -8,10 +8,6 @@ on:
     - cron: "7 5-21 * * *"
   workflow_dispatch:
     inputs:
-      rescore:
-        description: "Re-score everything against the current rubric"
-        type: boolean
-        default: false
       hours:
         description: "How many hours back to group into stories (72 normally; 200 to fill a gap)"
         type: number
@@ -114,15 +110,10 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           # paid use allows far more than the free tier's handful a minute
           GEMINI_RPM: "30"
-        run: |
-          # --switch: anything scored by a different model is scored again,
-          # a day's allowance at a time, so the archive ends up measured by
-          # one instrument rather than two.
-          if [ "${{ inputs.rescore }}" = "true" ]; then
-            python3 -m score.run score --switch
-          else
-            python3 -m score.run score --switch || echo "scoring failed, continuing"
-          fi
+        # --switch: anything scored by a different model is scored again,
+        # a day's allowance at a time, so the archive ends up measured by one
+        # instrument rather than two.
+        run: python3 -m score.run score --switch || echo "scoring failed, continuing"
 
       - name: Build the frame and draw it
         run: python3 -m frames.build

@@ -165,6 +165,29 @@ def build(db_path=None, out=OUT, today=None):
     for sid in keep:
         vol[sid] = vol[sid][:n_days]
 
+    # Days nothing was collected - the job was down, not the news. Drawn as
+    # zero they read as the press falling silent, and the carry-over above
+    # makes them worse: a half-strength echo of the day before, then nothing.
+    # So each is bridged by a straight line between the collected days either
+    # side, and listed, so the page can say plainly that it was not collected.
+    polled = set()
+    for (t,) in con.execute("SELECT polled_at FROM poll WHERE error IS NULL AND n_items > 0"):
+        d = (uk_day(t) - first).days
+        if 0 <= d < n_days:
+            polled.add(d)
+    gaps = [d for d in range(n_days) if d not in polled]
+
+    def bridge(series):
+        out = list(series)
+        for d in gaps:
+            a = max((k for k in range(d) if k not in gaps), default=None)
+            b = min((k for k in range(d + 1, n_days) if k not in gaps), default=None)
+            if a is not None and b is not None:
+                out[d] = out[a] + (out[b] - out[a]) * (d - a) / (b - a)
+            elif a is not None:
+                out[d] = out[a]
+        return out
+
     out_stories = []
     for sid in keep:
         st = stories[sid]
@@ -174,9 +197,9 @@ def build(db_path=None, out=OUT, today=None):
             heads[o] = hs[:HEADS]
         out_stories.append({
             "id": sid, "name": st["name"], "target": st["target"], "issue": st["issue"],
-            "vol": [round(v, 2) for v in vol[sid]],
+            "vol": [round(v, 2) for v in bridge(vol[sid])],
             "stance": carry_stance(st["stance"], n_days),
-            "outlets": {o: {"vol": [round(v, 2) for v in smooth(b["n"], n_days)],
+            "outlets": {o: {"vol": [round(v, 2) for v in bridge(smooth(b["n"], n_days))],
                             "stance": carry_stance(b["stance"], n_days)}
                         for o, b in sorted(st["by"].items())},
             "heads": heads,
@@ -187,6 +210,8 @@ def build(db_path=None, out=OUT, today=None):
     # least partisan wording available) or, failing that, any paper.
     events = []
     for d in range(1, n_days):
+        if d in gaps or d - 1 in gaps:
+            continue                     # a rise across a gap is the gap, not news
         tot = sum(s["vol"][d] for s in out_stories) or 1
         prev = sum(s["vol"][d - 1] for s in out_stories) or 1
         rise = sorted(out_stories, key=lambda s: -(s["vol"][d] / tot - s["vol"][d - 1] / prev))
@@ -211,6 +236,7 @@ def build(db_path=None, out=OUT, today=None):
             "WHERE f.active = 1") if r["id"] in NAMES),
         "stories": out_stories,
         "events": events,
+        "gaps": gaps,
     }
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
@@ -220,7 +246,8 @@ def build(db_path=None, out=OUT, today=None):
         f.write(";\n")
     size = os.path.getsize(out)
     print(f"{len(out_stories)} stories over {n_days} days ({days[0]} to {days[-1]}), "
-          f"{len(events)} events, {size / 1e3:.0f} KB -> {os.path.relpath(out, ROOT)}")
+          f"{len(events)} events, {len(gaps)} days not collected, "
+          f"{size / 1e3:.0f} KB -> {os.path.relpath(out, ROOT)}")
     con.close()
     return data
 

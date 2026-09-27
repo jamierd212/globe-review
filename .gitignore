@@ -13,3 +13,4 @@ data/cacert.pem
 .venv/
 .env
 .env.*
+data/compare/

@@ -1179,6 +1179,8 @@ var FPM = (function (raw) {
     HIST: { share: share, dst: dst },
     HEND: Date.UTC(+p[0], +p[1] - 1, +p[2]),
     NOUT: raw.outlets.length,
+    /* days nothing was collected; the history bridges them, the timeline says so */
+    GAPS: (function () { var g = {}; (raw.gaps || []).forEach(function (d) { g[d] = 1; }); return g; })(),
     osal: osal, ostance: ostance
   };
 })(window.FPM_RAW);
@@ -3290,6 +3292,30 @@ var FPM = (function (raw) {
     g.strokeStyle = rule;
     g.beginPath(); g.moveTo(0, STR_B + 0.5); g.lineTo(PW, STR_B + 0.5); g.stroke();
 
+    /* days nothing was collected: shaded and labelled, so a bridged stretch
+       of line is never mistaken for coverage */
+    Object.keys(FPM.GAPS).forEach(function (k) {
+      var f = +k, x0 = Math.max(0, xOf(f - 0.5)), x1 = Math.min(PW, xOf(f + 0.5));
+      g.save();
+      g.globalAlpha = 0.55; g.fillStyle = soft;
+      g.fillRect(x0, STR_T, x1 - x0, STR_B - STR_T);
+      g.restore();
+    });
+    (function () {
+      /* one label per run of consecutive missing days */
+      var fs = Object.keys(FPM.GAPS).map(Number).sort(function (a, b) { return a - b; });
+      g.save(); g.fillStyle = ink3; g.font = '8.5px "IBM Plex Mono", monospace';
+      g.textAlign = "center"; g.textBaseline = "top";
+      for (var i = 0; i < fs.length; i++) {
+        if (i && fs[i] === fs[i - 1] + 1) continue;
+        var j = i; while (j + 1 < fs.length && fs[j + 1] === fs[j] + 1) j++;
+        var mid = (xOf(fs[i] - 0.5) + xOf(fs[j] + 0.5)) / 2;
+        var w = xOf(fs[j] + 0.5) - xOf(fs[i] - 0.5);
+        if (w > 44) g.fillText("not collected", mid, STR_T + 3);
+      }
+      g.restore();
+    })();
+
     /* the lines, coloured segment by segment */
     g.lineWidth = 2; g.lineCap = "round"; g.lineJoin = "round";
     SER.forEach(function (sr) {
@@ -3490,7 +3516,8 @@ var FPM = (function (raw) {
       tctx.beginPath(); tctx.arc(pk.x, pk.y, 3, 0, Math.PI * 2); tctx.fill();
       tctx.globalAlpha = 1;
     });
-    if (tlDate) tlDate.textContent = fmtDate(Math.round(pos));
+    if (tlDate) tlDate.textContent = fmtDate(Math.round(pos)) +
+      (FPM.GAPS[Math.round(pos)] ? " \u00b7 not collected" : "");
   }
 
   function setCap(k, hover) {
