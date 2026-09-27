@@ -5,6 +5,11 @@
     python3 -m score.run score --batch     same thing at half price
     python3 -m score.run score --limit 40 --dry     estimate the cost first
 
+Which model does it is set in score/llm.py (FPM_PROVIDER overrides): Claude
+Haiku, one article per call at half price in a batch, or Gemini Flash-Lite,
+twenty articles per request so the day fits in Google's free allowance.
+`python3 -m score.compare` tests one against the other before any switch.
+
 Two model steps, in this order:
 
   tag    one call per story. Files it under one of the standing subjects, or
@@ -30,6 +35,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ingest import db                       # noqa: E402
 from score import prompt as P               # noqa: E402
+from score import llm as L                   # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL = "claude-haiku-4-5-20251001"
@@ -39,9 +45,8 @@ PRICE_IN, PRICE_OUT = 1.00, 5.00
 
 
 def load_env():
-    """Read .env if the key is not already in the environment."""
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        return True
+    """Read .env into the environment, without overriding anything already
+    set there (on GitHub the keys come from secrets instead)."""
     path = os.path.join(ROOT, ".env")
     if os.path.exists(path):
         for line in open(path, encoding="utf-8"):
@@ -118,6 +123,100 @@ def money(tin, tout):
     return tin / 1e6 * PRICE_IN + tout / 1e6 * PRICE_OUT
 
 
+def _store(con, t, out, ver, model, now):
+    """Write one score, replacing any earlier one for the same article and
+    subject. Delete-then-insert rather than an upsert: the key includes the
+    subject, which is empty for stories filed under none, and an empty key
+    never conflicts - so an upsert quietly added a second row instead."""
+    con.execute("DELETE FROM article_score WHERE article_id=? AND issue_id IS ?",
+                (t["id"], t["issue_id"]))
+    con.execute(
+        "INSERT INTO article_score (article_id, issue_id, story_id, stance, "
+        "tone, confidence, quote, desk, reason, rubric_version, model, scored_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (t["id"], t["issue_id"], t["story_id"], out.get("stance"), out.get("tone"),
+         out.get("confidence"), out.get("quote"), desk_from_url(t["url_canon"]),
+         out.get("reason"), ver, model, now))
+
+
+def _chunks(seq, n):
+    for i in range(0, len(seq), n):
+        yield seq[i:i + n]
+
+
+# Items per request when grouping. Big enough that the rubric is sent once per
+# twenty articles rather than once per article; small enough that one reply
+# stays short and one failed request loses little.
+SCORE_GROUP = 20
+TAG_GROUP = 8
+
+
+def score_grouped(todo, ver, con):
+    """Score several articles of the same story per request, into the
+    database. Stops cleanly at the day's limit and leaves the rest for the
+    next run."""
+    model = L.model_name()
+
+    def keep(t, r, now):
+        _store(con, t, r, ver, model, now)
+    return score_groups(todo, keep, commit=con.commit)
+
+
+def score_groups(todo, emit, commit=lambda: None):
+    """The grouped scoring itself. emit(article, answer, now) is called for
+    each answer, so the same code can fill the database or a comparison file."""
+    system = P.system_prompt(grouped=True)
+    # Packed by article count, not by story: an hourly run has a few new
+    # articles on each of dozens of stories, and one request per story would
+    # use the whole free day's allowance. Each story's items stay together
+    # under its own target.
+    ordered = sorted(todo, key=lambda t: (t["story_id"] or 0, t["id"]))
+    kept = abstained = failed = calls = 0
+    tin = tout = 0
+    for chunk in _chunks(ordered, SCORE_GROUP):
+        ids = {f"a{t['id']}": t for t in chunk}
+        sections = []
+        for t in chunk:
+            if not sections or sections[-1]["story_id"] != t["story_id"]:
+                sections.append({"story_id": t["story_id"],
+                                 "issue": t["issue_id"] or t["story"],
+                                 "target": t["target"], "items": []})
+            sections[-1]["items"].append(
+                {"id": f"a{t['id']}", "title": t["title"],
+                 "standfirst": t["standfirst"], "desk": desk_from_url(t["url_canon"])})
+        user = P.group_prompt(sections)
+        try:
+            out, i_, o_ = L.complete(system, user, max_tokens=140 * len(chunk) + 200)
+        except L.DailyLimit:
+            commit()
+            print(f"\ndaily limit reached after {calls} requests - the rest "
+                  f"waits for the next run")
+            return _report(kept, abstained, failed, tin, tout, calls)
+        calls += 1
+        tin += i_; tout += o_
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        got = {str(r.get("id")): r for r in (out if isinstance(out, list) else [])
+               if isinstance(r, dict)}
+        for k, t in ids.items():
+            r = got.get(k)
+            if r is None:
+                failed += 1          # stays unscored; tried again next run
+                continue
+            emit(t, r, now)
+            if r.get("stance") is None:
+                abstained += 1
+            else:
+                kept += 1
+        commit()
+    return _report(kept, abstained, failed, tin, tout, calls)
+
+
+def _report(kept, abstained, failed, tin, tout, calls):
+    print(f"\n{kept} scored, {abstained} abstained, {failed} not answered, "
+          f"{calls} requests, {tin + tout:,} tokens ({L.model_name()})")
+    return 0
+
+
 # ------------------------------------------------------------ corrections ---
 
 CORRECTIONS = os.path.join(ROOT, "corrections.json")
@@ -159,7 +258,61 @@ def apply_corrections(con, path=CORRECTIONS):
 
 # -------------------------------------------------------------------- tag ---
 
+def _file_story(con, sid, current_name, out, safe):
+    """Write one story's name, subject and target from the model's answer."""
+    iid = out.get("issue_id")
+    if iid not in {i["id"] for i in safe}:
+        iid = None
+    target = (out.get("target") or "").strip()
+    if iid and not target:
+        target = next((i["target"] for i in safe if i["id"] == iid), "")
+    # The name is written once, when the story is first filed, and not
+    # touched again - see cmd_tag.
+    name = clean_name(out.get("name"), current_name)
+    con.execute("UPDATE story SET issue_id=?, target=?, target_conf=?, name=? "
+                "WHERE id=?",
+                (iid, target, "inherited" if iid else "generated", name, sid))
+    return iid
+
+
+def tag_grouped(con, todo, safe):
+    system = P.tag_system(grouped=True)
+    counts, calls, tin, tout = {}, 0, 0, 0
+    for chunk in _chunks(todo, TAG_GROUP):
+        stories = []
+        for s in chunk:
+            heads = [r["title"] for r in con.execute(
+                "SELECT a.title FROM article a JOIN story_member m ON m.article_id=a.id "
+                "WHERE m.story_id=? LIMIT 8", (s["id"],))]
+            stories.append({"id": f"s{s['id']}", "name": s["name"], "headlines": heads})
+        try:
+            out, i_, o_ = L.complete(system, P.tag_group_prompt(stories, safe),
+                                     max_tokens=120 * len(chunk) + 200)
+        except L.DailyLimit:
+            print(f"daily limit reached after {calls} requests - the rest waits")
+            break
+        calls += 1
+        tin += i_; tout += o_
+        got = {str(r.get("id")): r for r in (out if isinstance(out, list) else [])
+               if isinstance(r, dict)}
+        for s in chunk:
+            r = got.get(f"s{s['id']}")
+            if not r or not (r.get("target") or r.get("issue_id")):
+                continue                 # left untagged; tried again next run
+            iid = _file_story(con, s["id"], s["name"], r, safe)
+            k = iid or "(none - not a news subject)"
+            counts[k] = counts.get(k, 0) + 1
+        con.commit()
+    print("\nfiled under:")
+    for k, v in sorted(counts.items(), key=lambda kv: -kv[1])[:18]:
+        print(f"  {v:>3}  {k}")
+    print(f"\n{calls} requests, {tin + tout:,} tokens ({L.model_name()})")
+    con.close()
+    return 0
+
+
 def cmd_tag(limit=None, dry=False, db_path=None, rename=False):
+    load_env()
     con = db.connect(db_path)
     apply_corrections(con)
     issues = json.load(open(os.path.join(ROOT, "taxonomy.json"),
@@ -181,6 +334,8 @@ def cmd_tag(limit=None, dry=False, db_path=None, rename=False):
         print(f"  would send about {len(todo)} calls")
         return 0
 
+    if L.grouped():
+        return tag_grouped(con, todo, safe)
     cli = client()
     tin = tout = 0
     counts = {}
@@ -218,10 +373,14 @@ def cmd_tag(limit=None, dry=False, db_path=None, rename=False):
 
 # ------------------------------------------------------------------ score ---
 
-def cmd_score(limit=None, dry=False, db_path=None, batch=False):
+def cmd_score(limit=None, dry=False, db_path=None, batch=False, switch=False):
+    """switch: also re-score anything scored by a different model, so the
+    archive ends up measured by one instrument rather than two."""
+    load_env()
     con = db.connect(db_path)
     apply_corrections(con)
     ver = P.rubric_version()
+    same_model = "AND sc.model = ? " if switch else ""
     todo = [dict(r) for r in con.execute(
         "SELECT a.id, a.title, a.standfirst, a.url_canon, s.id AS story_id, "
         "       s.issue_id, s.target, s.name AS story "
@@ -230,8 +389,10 @@ def cmd_score(limit=None, dry=False, db_path=None, batch=False):
         "JOIN story s ON s.id = m.story_id "
         "LEFT JOIN article_score sc ON sc.article_id = a.id "
         "     AND sc.issue_id IS s.issue_id AND sc.rubric_version = ? "
+        + same_model +
         "WHERE s.target IS NOT NULL AND s.target != '' AND sc.article_id IS NULL "
-        "ORDER BY s.n_articles DESC", (ver,))]
+        "ORDER BY s.n_articles DESC",
+        (ver, L.model_name()) if switch else (ver,))]
     if limit:
         todo = todo[:limit]
     if not todo:
@@ -252,6 +413,8 @@ def cmd_score(limit=None, dry=False, db_path=None, batch=False):
               "call, so prompt caching would cut it hard)")
         return 0
 
+    if L.grouped():
+        return score_grouped(todo, ver, con)
     cli = client()
     system = P.system_prompt()
     if batch:
@@ -273,16 +436,7 @@ def cmd_score(limit=None, dry=False, db_path=None, batch=False):
             abstained += 1
         else:
             kept += 1
-        con.execute(
-            "INSERT INTO article_score (article_id, issue_id, story_id, stance, "
-            "tone, confidence, quote, desk, reason, rubric_version, model, scored_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(article_id, issue_id) "
-            "DO UPDATE SET stance=excluded.stance, tone=excluded.tone, "
-            "confidence=excluded.confidence, quote=excluded.quote, "
-            "reason=excluded.reason, scored_at=excluded.scored_at",
-            (t["id"], t["issue_id"], t["story_id"], stance, out.get("tone"),
-             out.get("confidence"), out.get("quote"), desk, out.get("reason"),
-             ver, MODEL, now))
+        _store(con, t, out, ver, MODEL, now)
         if n % 25 == 0:
             con.commit()
             print(f"  {n}/{len(todo)}  ${money(tin, tout):.2f}")
@@ -403,16 +557,7 @@ def _write_results(cli, con, batch_id, items, ver):
         stance = out.get("stance")
         kept += stance is not None
         abstained += stance is None
-        con.execute(
-            "INSERT INTO article_score (article_id, issue_id, story_id, stance, "
-            "tone, confidence, quote, desk, reason, rubric_version, model, scored_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(article_id, issue_id) "
-            "DO UPDATE SET stance=excluded.stance, tone=excluded.tone, "
-            "confidence=excluded.confidence, quote=excluded.quote, "
-            "reason=excluded.reason, scored_at=excluded.scored_at",
-            (t["id"], t["issue_id"], t["story_id"], stance, out.get("tone"),
-             out.get("confidence"), out.get("quote"),
-             desk_from_url(t["url_canon"]), out.get("reason"), ver, MODEL, now))
+        _store(con, t, out, ver, MODEL, now)
     con.commit()
     print(f"\nbatch {batch_id}: {kept} scored, {abstained} abstained, {failed} failed")
     print(f"{tin + tout:,} tokens, ${money(tin, tout) / 2:.2f} at batch price")
@@ -471,5 +616,6 @@ if __name__ == "__main__":
     if cmd == "tag":
         sys.exit(cmd_tag(limit=lim, dry=dry, rename="--rename" in a))
     if cmd == "score":
-        sys.exit(cmd_score(limit=lim, dry=dry, batch="--batch" in a))
+        sys.exit(cmd_score(limit=lim, dry=dry, batch="--batch" in a,
+                           switch="--switch" in a))
     sys.exit(__doc__)

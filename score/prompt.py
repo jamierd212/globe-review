@@ -50,8 +50,28 @@ Reply with JSON and nothing else:
 %s"""
 
 
-def system_prompt():
-    return SYSTEM % rubric_text()
+def system_prompt(grouped=False):
+    text = SYSTEM % rubric_text()
+    if not grouped:
+        return text
+    # Several items of the same story in one request. The reply format is the
+    # only thing that changes: one object per item, keyed back by id.
+    one = """Reply with JSON and nothing else:
+{"stance": -2..2 or null, "confidence": "high"|"medium"|"low",
+ "quote": "verbatim span from the input, or null", "tone": -2..2,
+ "reason": "one short clause"}"""
+    many = """You will be given several items, grouped under the story each belongs \
+to, each with an id. Score every item against ITS OWN story's target - the \
+targets differ between stories, and scoring an item against the wrong one \
+inverts it. Score each item on its own words alone, exactly as if it were the \
+only one: do not compare items with each other or let one pull another.
+
+Reply with a JSON array and nothing else, one object per item, in the order given:
+[{"id": "<the item's id>", "stance": -2..2 or null, "confidence": "high"|"medium"|"low",
+  "quote": "verbatim span from that item, or null", "tone": -2..2,
+  "reason": "one short clause"}]"""
+    assert one in text
+    return text.replace(one, many)
 
 
 def item_prompt(title, standfirst, issue_name, target, desk=None):
@@ -126,6 +146,57 @@ specific thing being judged, not the field. For "UK sanctions on Israeli \
 settlements" the target is "the sanctions", not "the Middle East". Getting \
 this wrong inverts every score on the story rather than blurring it.
 - The target must be a thing that can be favoured or opposed, never a topic."""
+
+
+def group_prompt(sections):
+    """Several stories' items in one request: each story's target stated once,
+    then its items by id. Never the paper's name.
+
+    sections: [{"issue": name, "target": ..., "items": [{"id", "title",
+    "standfirst", "desk"}]}]"""
+    body = []
+    for n, sec in enumerate(sections, 1):
+        body += [f"=== STORY {n} ===",
+                 f"ISSUE: {sec['issue']}",
+                 f"TARGET (score this story's items for favourability toward this, "
+                 f"and nothing else): {sec['target']}", ""]
+        for it in sec["items"]:
+            body.append(f"[{it['id']}]")
+            if it.get("desk"):
+                body.append(f"DESK: {it['desk']}   (record it; do not adjust the score for it)")
+            body.append("HEADLINE: " + it["title"])
+            if it.get("standfirst"):
+                body.append("STANDFIRST: " + it["standfirst"])
+            body.append("")
+    return "\n".join(body).rstrip()
+
+
+def tag_system(grouped=False):
+    if not grouped:
+        return TAG_SYSTEM
+    one = """Reply with JSON and nothing else:
+{"name": "<short neutral name for the story>",
+ "issue_id": "<id from the list, or null>", "confidence": "high"|"medium"|"low",
+ "target": "<what a favourable score would be favourable TOWARD>"}"""
+    many = """You will be given several stories, each with an id. Handle each one on \
+its own. Reply with a JSON array and nothing else, one object per story:
+[{"id": "<the story's id>", "name": "<short neutral name for the story>",
+  "issue_id": "<id from the list, or null>", "confidence": "high"|"medium"|"low",
+  "target": "<what a favourable score would be favourable TOWARD>"}]"""
+    assert one in TAG_SYSTEM
+    return TAG_SYSTEM.replace(one, many)
+
+
+def tag_group_prompt(stories, issues):
+    """stories: [{"id", "name", "headlines"}]. The subject list once."""
+    lines = ["SUBJECTS:"]
+    for i in issues:
+        lines.append(f"  {i['id']}: {i['name']} - target: {i['target']}")
+    for s in stories:
+        lines += ["", f"[{s['id']}] STORY: {s['name']}", "HEADLINES:"]
+        for h in s["headlines"][:8]:
+            lines.append("  - " + h)
+    return "\n".join(lines)
 
 
 def tag_prompt(name, headlines, issues):

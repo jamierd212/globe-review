@@ -103,11 +103,13 @@ jobs:
       - name: Name and file new stories
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python3 -m score.run tag || echo "tagging failed, continuing"
 
       - name: Score
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           if [ "${{ inputs.rescore }}" = "true" ]; then
             python3 -m score.run score --batch
