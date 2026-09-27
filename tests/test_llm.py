@@ -81,8 +81,9 @@ def test_grouped_scoring_sends_twenty_at_a_time_and_never_the_paper():
         R.score_groups(_todo(25), lambda t, r, now: got.__setitem__(t["id"], r))
     finally:
         L.complete = real
-    assert len(sent) == 2, len(sent)                 # 20 + 5
-    assert len(got) == 23                            # one unanswered per request
+    # 20 + 5, and each group's one unanswered item asked once more on its own
+    assert len(sent) == 4, len(sent)
+    assert len(got) == 23                            # never invented
     assert all("mail" not in u.lower() for u in sent), "the paper reached the prompt"
 
 
@@ -112,6 +113,24 @@ def test_many_small_stories_share_requests_each_under_its_own_target():
             if m:
                 i = int(m.group(1))
                 assert target == f"target of story {1 + i % 10}", (i, target)
+
+
+def test_one_blocked_headline_does_not_sink_the_rest():
+    """A reply that comes back empty is retried in halves until only the
+    item the model will not handle is left unanswered."""
+    def fake(system, user, max_tokens=300):
+        ids = [l[1:-1] for l in user.splitlines() if l.startswith("[a")]
+        if "a7" in ids:
+            return None, 1, 0            # the whole reply blanked
+        return [{"id": i, "stance": 0} for i in ids], 1, 1
+    real = L.complete
+    L.complete = fake
+    got = {}
+    try:
+        R.score_groups(_todo(20), lambda t, r, now: got.__setitem__(t["id"], r))
+    finally:
+        L.complete = real
+    assert len(got) == 19 and 7 not in got, sorted(got)
 
 
 def test_daily_limit_stops_cleanly():

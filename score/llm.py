@@ -176,6 +176,14 @@ def _gemini(system, user, max_tokens, retries=5):
         "contents": [{"role": "user", "parts": [{"text": user}]}],
         "generationConfig": {"responseMimeType": "application/json",
                              "temperature": 0, "maxOutputTokens": max_tokens},
+        # The news is full of killings, abuse and extremism, and scoring how a
+        # paper frames them is the whole job. With the default filters a
+        # single court-report headline blanks the reply for all twenty items
+        # sent with it: found when two requests in the first comparison came
+        # back empty. Nothing is being generated here but a number per item.
+        "safetySettings": [{"category": c, "threshold": "BLOCK_NONE"} for c in (
+            "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
+            "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT")],
     }
     for attempt in range(retries):
         _pace()
@@ -203,8 +211,13 @@ def _gemini(system, user, max_tokens, retries=5):
             time.sleep(2 ** attempt)
             continue
         usage = r.get("usageMetadata", {})
-        parts = ((r.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+        cand = (r.get("candidates") or [{}])[0]
+        parts = (cand.get("content") or {}).get("parts") or []
         txt = "".join(p.get("text", "") for p in parts if not p.get("thought"))
+        if not txt:
+            why = ((r.get("promptFeedback") or {}).get("blockReason")
+                   or cand.get("finishReason") or "no text")
+            sys.stderr.write(f"  gemini returned nothing: {why}\n")
         return (parse_json(txt), usage.get("promptTokenCount", 0),
                 usage.get("candidatesTokenCount", 0))
     return None, 0, 0

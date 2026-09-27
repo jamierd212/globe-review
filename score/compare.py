@@ -116,8 +116,14 @@ def run(n=300, seed=1, db_path=None, provider="gemini"):
         answers[t["id"]] = r
     R.score_groups(items, keep)
 
-    before = {t["id"]: t["before"] for t in items}
-    after = {t["id"]: (answers[t["id"]].get("stance") if t["id"] in answers else None)
+    def whole(v):
+        # the rubric's scale is whole points; stored values are floats
+        try:
+            return None if v is None else int(round(float(v)))
+        except (TypeError, ValueError):
+            return None
+    before = {t["id"]: whole(t["before"]) for t in items}
+    after = {t["id"]: whole(answers[t["id"]].get("stance"))
              for t in items if t["id"] in answers}
     r = agreement.compare(before, after)
     papers = by_paper(items, before, after)

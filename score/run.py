@@ -162,6 +162,41 @@ def score_grouped(todo, ver, con):
     return score_groups(todo, keep, commit=con.commit)
 
 
+def _sections(chunk):
+    """A group's articles under their own stories, each story's target once."""
+    sections = []
+    for t in chunk:
+        if not sections or sections[-1]["story_id"] != t["story_id"]:
+            sections.append({"story_id": t["story_id"],
+                             "issue": t["issue_id"] or t["story"],
+                             "target": t["target"], "items": []})
+        sections[-1]["items"].append(
+            {"id": f"a{t['id']}", "title": t["title"],
+             "standfirst": t["standfirst"], "desk": desk_from_url(t["url_canon"])})
+    return sections
+
+
+def _ask_group(system, chunk, depth=0):
+    """One request for a group. Anything left unanswered is asked again in two
+    halves, so a headline the model will not handle costs itself rather than
+    the nineteen sent with it. A single item is tried once more on its own.
+
+    Returns ({id: answer}, requests used, tokens in, tokens out)."""
+    out, tin, tout = L.complete(system, P.group_prompt(_sections(chunk)),
+                                max_tokens=140 * len(chunk) + 200)
+    got = {str(r.get("id")).strip("[] "): r
+           for r in (out if isinstance(out, list) else []) if isinstance(r, dict)}
+    calls = 1
+    missing = [t for t in chunk if f"a{t['id']}" not in got]
+    if missing and depth < 6 and not (len(chunk) == 1 and depth > 0):
+        half = (len(missing) + 1) // 2
+        for part in (missing[:half], missing[half:]):
+            if part:
+                g, c, i_, o_ = _ask_group(system, part, depth + 1)
+                got.update(g); calls += c; tin += i_; tout += o_
+    return got, calls, tin, tout
+
+
 def score_groups(todo, emit, commit=lambda: None):
     """The grouped scoring itself. emit(article, answer, now) is called for
     each answer, so the same code can fill the database or a comparison file."""
@@ -174,33 +209,19 @@ def score_groups(todo, emit, commit=lambda: None):
     kept = abstained = failed = calls = 0
     tin = tout = 0
     for chunk in _chunks(ordered, SCORE_GROUP):
-        ids = {f"a{t['id']}": t for t in chunk}
-        sections = []
-        for t in chunk:
-            if not sections or sections[-1]["story_id"] != t["story_id"]:
-                sections.append({"story_id": t["story_id"],
-                                 "issue": t["issue_id"] or t["story"],
-                                 "target": t["target"], "items": []})
-            sections[-1]["items"].append(
-                {"id": f"a{t['id']}", "title": t["title"],
-                 "standfirst": t["standfirst"], "desk": desk_from_url(t["url_canon"])})
-        user = P.group_prompt(sections)
         try:
-            out, i_, o_ = L.complete(system, user, max_tokens=140 * len(chunk) + 200)
+            got, c, i_, o_ = _ask_group(system, chunk)
         except L.DailyLimit:
             commit()
             print(f"\ndaily limit reached after {calls} requests - the rest "
                   f"waits for the next run")
             return _report(kept, abstained, failed, tin, tout, calls)
-        calls += 1
-        tin += i_; tout += o_
+        calls += c; tin += i_; tout += o_
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        got = {str(r.get("id")): r for r in (out if isinstance(out, list) else [])
-               if isinstance(r, dict)}
-        for k, t in ids.items():
-            r = got.get(k)
+        for t in chunk:
+            r = got.get(f"a{t['id']}")
             if r is None:
-                failed += 1          # stays unscored; tried again next run
+                failed += 1              # stays unscored; tried again next run
                 continue
             emit(t, r, now)
             if r.get("stance") is None:
