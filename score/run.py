@@ -234,7 +234,7 @@ def score_groups(todo, emit, commit=lambda: None):
 
 def _report(kept, abstained, failed, tin, tout, calls):
     print(f"\n{kept} scored, {abstained} abstained, {failed} not answered, "
-          f"{calls} requests, {tin + tout:,} tokens ({L.model_name()})")
+          f"{calls} requests, {tin + tout:,} tokens ({L.label()})")
     return 0
 
 
@@ -327,7 +327,7 @@ def tag_grouped(con, todo, safe):
     print("\nfiled under:")
     for k, v in sorted(counts.items(), key=lambda kv: -kv[1])[:18]:
         print(f"  {v:>3}  {k}")
-    print(f"\n{calls} requests, {tin + tout:,} tokens ({L.model_name()})")
+    print(f"\n{calls} requests, {tin + tout:,} tokens ({L.label()})")
     con.close()
     return 0
 

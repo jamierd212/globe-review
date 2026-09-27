@@ -29,7 +29,7 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -104,17 +104,24 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # paid use allows far more than the free tier's handful a minute
+          GEMINI_RPM: "30"
         run: python3 -m score.run tag || echo "tagging failed, continuing"
 
       - name: Score
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # paid use allows far more than the free tier's handful a minute
+          GEMINI_RPM: "30"
         run: |
+          # --switch: anything scored by a different model is scored again,
+          # a day's allowance at a time, so the archive ends up measured by
+          # one instrument rather than two.
           if [ "${{ inputs.rescore }}" = "true" ]; then
-            python3 -m score.run score --batch
+            python3 -m score.run score --switch
           else
-            python3 -m score.run score --batch || echo "scoring failed, continuing"
+            python3 -m score.run score --switch || echo "scoring failed, continuing"
           fi
 
       - name: Build the frame and draw it

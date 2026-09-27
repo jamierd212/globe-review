@@ -42,20 +42,37 @@ def test_key_never_goes_in_the_url():
     assert seen["headers"].get("X-goog-api-key") == "test-key-123"
 
 
-def test_newest_stable_flash_lite_is_picked():
+MODELS = {"models": [
+    {"name": "models/gemini-3.5-flash-lite", "supportedGenerationMethods": ["generateContent"]},
+    {"name": "models/gemini-3.7-flash", "supportedGenerationMethods": ["generateContent"]},
+    {"name": "models/gemini-3.8-flash", "supportedGenerationMethods": ["generateContent"]},
+    {"name": "models/gemini-3.9-flash-preview", "supportedGenerationMethods": ["generateContent"]},
+    {"name": "models/gemini-3.8-flash-tts", "supportedGenerationMethods": ["generateContent"]}]}
+
+
+def _pick(models, env=None):
     L._GEMINI_MODEL = None
     os.environ.pop("GEMINI_MODEL", None)
+    if env:
+        os.environ["GEMINI_MODEL"] = env
     real = L._request
-    L._request = lambda m, p, b=None: {"models": [
-        {"name": "models/gemini-2.5-flash-lite", "supportedGenerationMethods": ["generateContent"]},
-        {"name": "models/gemini-3.1-flash-lite", "supportedGenerationMethods": ["generateContent"]},
-        {"name": "models/gemini-3.5-flash-lite-preview", "supportedGenerationMethods": ["generateContent"]},
-        {"name": "models/gemini-3.5-flash", "supportedGenerationMethods": ["generateContent"]}]}
+    L._request = lambda m, p, b=None: models
     try:
-        assert L.gemini_model() == "gemini-3.1-flash-lite"
+        return L.gemini_model()
     finally:
         L._request = real
         L._GEMINI_MODEL = None
+        os.environ.pop("GEMINI_MODEL", None)
+
+
+def test_the_tested_model_is_used_while_it_exists():
+    assert _pick(MODELS) == "gemini-3.8-flash"
+
+
+def test_a_retired_model_falls_back_to_the_newest_stable_flash():
+    gone = {"models": [m for m in MODELS["models"] if m["name"] != "models/gemini-3.8-flash"]}
+    assert _pick(gone) == "gemini-3.7-flash"                 # not Lite, not a preview
+    assert _pick(gone, env="gemini-9-flash-lite") == "gemini-3.5-flash-lite"
 
 
 def _todo(n=25, stories=1):
@@ -160,10 +177,10 @@ def test_rescoring_a_storyless_subject_replaces_rather_than_duplicates():
     assert [tuple(r) for r in rows] == [(1.0, "gemini")], [tuple(r) for r in rows]
 
 
-def test_default_stays_on_claude_until_switched():
+def test_default_is_gemini_grouped():
     os.environ.pop("FPM_PROVIDER", None)
-    assert L.provider() == "anthropic"
-    assert not L.grouped()
+    assert L.provider() == "gemini"
+    assert L.grouped()
 
 
 if __name__ == "__main__":

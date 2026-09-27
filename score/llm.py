@@ -9,9 +9,15 @@ Two providers:
               install. Has a free daily allowance that this job fits inside
               when articles are sent in groups.
 
-Chosen by FPM_PROVIDER, falling back to PROVIDER below. The default stays
-on Claude until Gemini has been compared with it: switching the scorer changes
-the measurement, and that is not something to do because a key appeared.
+Chosen by FPM_PROVIDER, falling back to PROVIDER below.
+
+Gemini 3.8 Flash, thinking "low", since 27 Sept 2026. Compared on 311 of
+Claude Haiku's scored articles and then refereed item by item where the two
+pointed opposite ways: Flash was right on 24 of 25 clear cases. Haiku's
+errors were systematic - scoring against the far side of the target, so
+every "slow AI down" piece came out favourable to the speed of AI. Flash-Lite
+was tried first and flipped signs the other way. `python3 -m score.compare`
+reruns the test for any model, and is the thing to run before switching again.
 
 The free tier has two limits, and they need handling differently. Too many
 requests in a minute is a wait. Too many in a day is not - waiting would hold
@@ -27,14 +33,24 @@ import time
 import urllib.error
 import urllib.request
 
-PROVIDER = "anthropic"
+PROVIDER = "gemini"
 
 ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
 
 GEMINI_API = "https://generativelanguage.googleapis.com/v1beta"
+# The model the comparison was run on. GEMINI_MODEL overrides it. If Google
+# retires the name, the newest stable Flash (not Lite) is used instead and a
+# warning is printed - the job keeps running, but rerun the comparison.
+GEMINI_DEFAULT = "gemini-3.8-flash"
 # Kept under the free tier's per-minute allowance, which Google sets per
 # account and changes without notice. GEMINI_RPM overrides it.
 GEMINI_RPM = 8
+# How hard the model thinks before answering. Left at Google's default, Flash
+# thought for ~7,700 tokens per request: two minutes each, and the thinking
+# used up the reply's length so twenty answers came back cut off. "low" took
+# five seconds and answered all twenty. GEMINI_THINKING overrides it.
+GEMINI_THINKING = "low"
+_NO_THINKING_CONFIG = set()      # models that refused the setting
 
 
 class DailyLimit(Exception):
@@ -122,24 +138,37 @@ def _version(name):
     return (int(m.group(1)), int(m.group(2) or 0)) if m else (0, 0)
 
 
+def _newest(models, kind):
+    """The newest stable model of a kind ('flash' or 'flash-lite')."""
+    names = [m["name"].replace("models/", "") for m in models
+             if "generateContent" in m.get("supportedGenerationMethods", [])
+             and not re.search(r"preview|exp|tts|image|audio|live|latest|omni", m["name"])]
+    if kind == "flash-lite":
+        names = [n for n in names if n.endswith("flash-lite")]
+    else:
+        names = [n for n in names if n.endswith("flash")]
+    return max(names, key=_version) if names else None
+
+
 def gemini_model():
-    """GEMINI_MODEL if set; otherwise the newest stable Flash-Lite this key
-    can use. Asked rather than hard-coded, because Google retires model names
-    and a hard-coded one fails on the morning it goes."""
+    """GEMINI_MODEL if set, else GEMINI_DEFAULT - checked against what this
+    key can actually use, because Google retires model names and a missing
+    one would fail every request until someone noticed."""
     global _GEMINI_MODEL
     if _GEMINI_MODEL:
         return _GEMINI_MODEL
-    chosen = os.environ.get("GEMINI_MODEL", "").strip()
-    if not chosen:
-        models = _request("GET", "models?pageSize=1000").get("models", [])
-        lite = [m["name"] for m in models
-                if "flash-lite" in m["name"]
-                and "generateContent" in m.get("supportedGenerationMethods", [])
-                and not re.search(r"preview|exp|tts|image|audio|live", m["name"])]
-        if not lite:
-            raise RuntimeError("no Flash-Lite model available to this key")
-        chosen = max(lite, key=_version)
-    _GEMINI_MODEL = chosen.replace("models/", "")
+    wanted = (os.environ.get("GEMINI_MODEL") or GEMINI_DEFAULT).replace("models/", "").strip()
+    models = _request("GET", "models?pageSize=1000").get("models", [])
+    have = {m["name"].replace("models/", "") for m in models}
+    if wanted in have:
+        _GEMINI_MODEL = wanted
+    else:
+        kind = "flash-lite" if wanted.endswith("flash-lite") else "flash"
+        _GEMINI_MODEL = _newest(models, kind)
+        if not _GEMINI_MODEL:
+            raise RuntimeError(f"{wanted} is not available and there is no {kind} to fall back on")
+        sys.stderr.write(f"  {wanted} is not available to this key - using "
+                         f"{_GEMINI_MODEL}. Rerun score.compare before trusting it.\n")
     return _GEMINI_MODEL
 
 
@@ -185,6 +214,9 @@ def _gemini(system, user, max_tokens, retries=5):
             "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
             "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT")],
     }
+    level = os.environ.get("GEMINI_THINKING") or GEMINI_THINKING
+    if level and model not in _NO_THINKING_CONFIG:
+        body["generationConfig"]["thinkingConfig"] = {"thinkingLevel": level}
     for attempt in range(retries):
         _pace()
         try:
@@ -194,6 +226,12 @@ def _gemini(system, user, max_tokens, retries=5):
                 err = json.loads(e.read().decode()).get("error", {})
             except Exception:
                 err = {}
+            if (e.code == 400 and "thinking" in (err.get("message") or "").lower()
+                    and "thinkingConfig" in body["generationConfig"]):
+                # this model does not take the setting; ask without it
+                _NO_THINKING_CONFIG.add(model)
+                del body["generationConfig"]["thinkingConfig"]
+                continue
             if e.code == 429:
                 if _is_daily(err):
                     raise DailyLimit(err.get("message", "daily limit reached"))
@@ -229,6 +267,13 @@ def model_name():
     """What gets written against every score, so a mixed archive can always
     be told apart."""
     return gemini_model() if provider() == "gemini" else ANTHROPIC_MODEL
+
+
+def label():
+    """The model's name for a log line, without asking the network."""
+    if provider() == "gemini":
+        return _GEMINI_MODEL or os.environ.get("GEMINI_MODEL") or GEMINI_DEFAULT
+    return ANTHROPIC_MODEL
 
 
 def complete(system, user, max_tokens=300):
