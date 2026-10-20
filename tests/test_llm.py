@@ -183,6 +183,83 @@ def test_default_is_gemini_grouped():
     assert L.grouped()
 
 
+def _http_error(code, message, violations=()):
+    import io, urllib.error
+    body = json.dumps({"error": {"code": code, "message": message, "details": [
+        {"violations": [{"quotaId": q} for q in violations]}]}}).encode()
+    return urllib.error.HTTPError("https://x", code, message, {}, io.BytesIO(body))
+
+
+def _with_request(fake):
+    real_req, real_model, real_pace = L._request, L.gemini_model, L._pace
+    L._request, L.gemini_model, L._pace = fake, (lambda: "gemini-test"), (lambda: None)
+    L._REQUESTS = 0
+    return lambda: (setattr(L, "_request", real_req), setattr(L, "gemini_model", real_model),
+                    setattr(L, "_pace", real_pace))
+
+
+def test_out_of_credit_stops_at_once_instead_of_waiting():
+    """What 8-16 Oct looked like: every request refused for quota."""
+    calls = []
+    def fake(m, p, b=None):
+        calls.append(1)
+        raise _http_error(429, "You exceeded your current quota, please check your plan and billing details.")
+    undo = _with_request(fake)
+    try:
+        L._gemini("s", "u", 100)
+        assert False, "should have stopped"
+    except L.DailyLimit:
+        pass
+    finally:
+        undo()
+    assert len(calls) == 1, f"asked {len(calls)} times after being told no"
+
+
+def test_a_refused_key_is_not_retried():
+    undo = _with_request(lambda m, p, b=None: (_ for _ in ()).throw(_http_error(403, "API key not valid")))
+    try:
+        L._gemini("s", "u", 100)
+        assert False
+    except L.Unavailable:
+        pass
+    finally:
+        undo()
+
+
+def test_a_failed_request_is_not_split_into_hundreds():
+    """The halving is for a reply that came back empty, not for an API that
+    is refusing everything. Before the fix this made ~40 requests per group."""
+    calls = []
+    def fake(system, user, max_tokens=300):
+        calls.append(1)
+        raise L.Unavailable("402: no credit")
+    real = L.complete
+    L.complete = fake
+    try:
+        R.score_groups(_todo(200, stories=20), lambda t, r, now: None)
+    finally:
+        L.complete = real
+    assert len(calls) == 1, f"{len(calls)} requests after the API said no"
+
+
+def test_the_run_cap_holds_whatever_happens():
+    os.environ["GEMINI_MAX_REQUESTS"] = "3"
+    ok = {"candidates": [{"content": {"parts": [{"text": "[]"}]}}], "usageMetadata": {}}
+    undo = _with_request(lambda m, p, b=None: ok)
+    try:
+        for _ in range(3):
+            L._gemini("s", "u", 100)
+        try:
+            L._gemini("s", "u", 100)
+            assert False, "went past the cap"
+        except L.DailyLimit:
+            pass
+    finally:
+        undo()
+        os.environ.pop("GEMINI_MAX_REQUESTS", None)
+        L._REQUESTS = 0
+
+
 if __name__ == "__main__":
     fails = 0
     for n, fn in sorted(globals().items()):

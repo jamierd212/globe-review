@@ -50,11 +50,30 @@ GEMINI_RPM = 8
 # used up the reply's length so twenty answers came back cut off. "low" took
 # five seconds and answered all twenty. GEMINI_THINKING overrides it.
 GEMINI_THINKING = "low"
+# A ceiling on requests per run, whatever happens. A normal run makes ten or
+# so; a backlog after an outage a hundred or two. Above this something is
+# wrong, and the cheapest thing to do is stop. GEMINI_MAX_REQUESTS overrides.
+GEMINI_MAX_REQUESTS = 250
+_REQUESTS = 0
 _NO_THINKING_CONFIG = set()      # models that refused the setting
 
 
-class DailyLimit(Exception):
-    """The day's free allowance is used up. Stop, and try again next run."""
+class Unavailable(Exception):
+    """The model will not serve this run - out of credit, bad key, quota
+    exceeded, or the service failing. The caller stops asking and leaves the
+    rest for the next run.
+
+    This exists because of 8-16 Oct 2026. The credit ran out, every request
+    failed, and the scorer took each failure for one awkward headline and
+    split the request in half to find it - down to single articles, for
+    every group, thousands of requests a run. Every run hit the 60-minute
+    limit and was cancelled for eight days. A failed REQUEST is not a failed
+    ITEM: only an empty reply to a request that succeeded is worth splitting.
+    """
+
+
+class DailyLimit(Unavailable):
+    """The day's allowance, or the run's own request cap, is used up."""
 
 
 def provider():
@@ -190,6 +209,18 @@ def _is_daily(err):
     return "per day" in (err.get("message") or "").lower()
 
 
+def _is_per_minute(err):
+    """The one kind of 429 worth waiting out. Everything else - a daily
+    limit, prepaid credit used up, 'exceeded your current quota' - will
+    still be true in a minute."""
+    for d in err.get("details", []):
+        for v in d.get("violations", []) or []:
+            if "PerMinute" in (v.get("quotaId") or ""):
+                return True
+    msg = (err.get("message") or "").lower()
+    return "per minute" in msg and "billing" not in msg
+
+
 def _retry_after(err, default):
     for d in err.get("details", []):
         m = re.match(r"(\d+(?:\.\d+)?)s", str(d.get("retryDelay") or ""))
@@ -217,7 +248,12 @@ def _gemini(system, user, max_tokens, retries=5):
     level = os.environ.get("GEMINI_THINKING") or GEMINI_THINKING
     if level and model not in _NO_THINKING_CONFIG:
         body["generationConfig"]["thinkingConfig"] = {"thinkingLevel": level}
+    global _REQUESTS
+    cap = int(os.environ.get("GEMINI_MAX_REQUESTS") or GEMINI_MAX_REQUESTS)
     for attempt in range(retries):
+        if _REQUESTS >= cap:
+            raise DailyLimit(f"this run's cap of {cap} requests is reached")
+        _REQUESTS += 1
         _pace()
         try:
             r = _request("POST", f"models/{model}:generateContent", body)
@@ -232,20 +268,21 @@ def _gemini(system, user, max_tokens, retries=5):
                 _NO_THINKING_CONFIG.add(model)
                 del body["generationConfig"]["thinkingConfig"]
                 continue
-            if e.code == 429:
-                if _is_daily(err):
-                    raise DailyLimit(err.get("message", "daily limit reached"))
+            msg = (err.get("message") or "")[:200]
+            if e.code == 429 and _is_per_minute(err) and attempt < retries - 1:
                 time.sleep(_retry_after(err, 20 * (attempt + 1)))
                 continue
+            if e.code == 429:
+                raise DailyLimit(f"429: {msg or 'quota or credit used up'}")
             if e.code >= 500 and attempt < retries - 1:
                 time.sleep(2 ** attempt)
                 continue
-            sys.stderr.write(f"  gemini {e.code}: {err.get('message', '')[:200]}\n")
-            return None, 0, 0
+            # a bad key, no billing, a retired model, an outage that outlasted
+            # the retries: none of it is about the items in this request
+            raise Unavailable(f"{e.code}: {msg}")
         except (urllib.error.URLError, TimeoutError) as e:
             if attempt == retries - 1:
-                sys.stderr.write(f"  gave up: {type(e).__name__}: {e}\n")
-                return None, 0, 0
+                raise Unavailable(f"{type(e).__name__}: {e}")
             time.sleep(2 ** attempt)
             continue
         usage = r.get("usageMetadata", {})
@@ -256,9 +293,10 @@ def _gemini(system, user, max_tokens, retries=5):
             why = ((r.get("promptFeedback") or {}).get("blockReason")
                    or cand.get("finishReason") or "no text")
             sys.stderr.write(f"  gemini returned nothing: {why}\n")
+        # thinking is billed as output, so it is counted as output
         return (parse_json(txt), usage.get("promptTokenCount", 0),
-                usage.get("candidatesTokenCount", 0))
-    return None, 0, 0
+                usage.get("candidatesTokenCount", 0) + usage.get("thoughtsTokenCount", 0))
+    raise Unavailable("no answer after retries")
 
 
 # ------------------------------------------------------------------- api ---

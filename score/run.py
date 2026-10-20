@@ -211,9 +211,9 @@ def score_groups(todo, emit, commit=lambda: None):
     for chunk in _chunks(ordered, SCORE_GROUP):
         try:
             got, c, i_, o_ = _ask_group(system, chunk)
-        except L.DailyLimit:
+        except L.Unavailable as stop:
             commit()
-            print(f"\ndaily limit reached after {calls} requests - the rest "
+            print(f"\nstopped after {calls} requests ({stop}) - the rest "
                   f"waits for the next run")
             return _report(kept, abstained, failed, tin, tout, calls)
         calls += c; tin += i_; tout += o_
@@ -309,8 +309,8 @@ def tag_grouped(con, todo, safe):
         try:
             out, i_, o_ = L.complete(system, P.tag_group_prompt(stories, safe),
                                      max_tokens=120 * len(chunk) + 200)
-        except L.DailyLimit:
-            print(f"daily limit reached after {calls} requests - the rest waits")
+        except L.Unavailable as stop:
+            print(f"stopped after {calls} requests ({stop}) - the rest waits")
             break
         calls += 1
         tin += i_; tout += o_
