@@ -64,6 +64,46 @@ def sample(con, n=300, seed=1, against=L.ANTHROPIC_MODEL):
     return picked
 
 
+def items_as_of(saved, cutoff):
+    """The articles of an earlier comparison, with their stories and targets
+    exactly as they stood at `cutoff` - rebuilt from the archive, which
+    records when every change was made. Lets a new model be tested on the
+    same questions an old one was asked, even after the stories have moved on.
+
+    saved: a data/compare/*.jsonl file. Each item carries the earlier answers
+    as `before` (the first model's) and `earlier_other`."""
+    from ingest import archive
+    old = {json.loads(l)["article_id"]: json.loads(l) for l in open(saved, encoding="utf-8")}
+    stories, members, arts = {}, {}, {}
+    for month in sorted(os.listdir(archive.SHARDS)):
+        d = os.path.join(archive.SHARDS, month)
+        if not os.path.isdir(d):
+            continue
+        for line in archive._read(os.path.join(d, "articles.jsonl")):
+            if line["id"] in old:
+                arts[line["id"]] = line
+        for line in archive._read(os.path.join(d, "stories.jsonl")):
+            if (line.get("exported_at") or "") <= cutoff:
+                stories[line["id"]] = line
+                for aid in line.get("members") or []:
+                    members[aid] = line["id"]
+        for line in archive._read(os.path.join(d, "members.jsonl")):
+            if line["at"] <= cutoff:
+                members[line["article_id"]] = line["story_id"]
+    items = []
+    for aid, o in old.items():
+        st = stories.get(members.get(aid))
+        a = arts.get(aid)
+        if not st or not a or not (st.get("target") or "").strip():
+            continue
+        items.append({"id": aid, "title": a["title"], "standfirst": a["standfirst"],
+                      "url_canon": a["url_canon"], "outlet_id": a["outlet_id"],
+                      "story_id": st["id"], "issue_id": st["issue_id"],
+                      "target": st["target"], "story": st["name"],
+                      "before": o["claude"], "earlier_other": o["other"]})
+    return items
+
+
 def _pearson(xs, ys):
     n = len(xs)
     if n < 3:
@@ -159,6 +199,80 @@ def run(n=300, seed=1, db_path=None, provider="gemini"):
     print("\n" + verdict(r, corr))
     print(f"answers saved to {os.path.relpath(path, ROOT)}")
     con.close()
+    return 0
+
+
+def run_saved(saved, cutoff, referee=None, provider="anthropic"):
+    """Ask a model the same questions as an earlier comparison, then mark it,
+    the first model and the earlier second model against the referee's key.
+    Agreement with another model is a weak test - the first comparison found
+    the old model itself wrong about one time in ten - so the referee's key
+    is the headline."""
+    R.load_env()
+    os.environ["FPM_PROVIDER"] = provider
+    items = items_as_of(saved, cutoff)
+    model = L.model_name() if provider == "gemini" else L.ANTHROPIC_MODEL
+    print(f"{len(items)} articles from {len({t['story_id'] for t in items})} stories "
+          f"(targets as of {cutoff}), scored by {model}")
+    answers = {}
+    tok = {"in": 0, "out": 0}
+    real = L.complete
+
+    def counted(system, user, max_tokens=300):
+        out, i, o = real(system, user, max_tokens)
+        tok["in"] += i; tok["out"] += o
+        return out, i, o
+    L.complete = counted
+    try:
+        R.score_groups(items, lambda t, r, now: answers.__setitem__(t["id"], r))
+    finally:
+        L.complete = real
+
+    def whole(v):
+        try:
+            return None if v is None else int(round(float(v)))
+        except (TypeError, ValueError):
+            return None
+    new = {t["id"]: whole((answers.get(t["id"]) or {}).get("stance")) for t in items}
+    old = {t["id"]: whole(t["before"]) for t in items}
+    other = {t["id"]: whole(t["earlier_other"]) for t in items}
+
+    print(f"\n{tok['in']:,} tokens in, {tok['out']:,} out")
+    for name, ref in (("Haiku 4.5 (Sept)", old), ("Gemini Flash (Sept)", other)):
+        r = agreement.compare(ref, new)
+        print(f"  agreement with {name:<20} kappa {r['kappa']}  same sign {r['same_sign']}  "
+              f"within 1 point {r['within_1']}")
+    if referee:
+        key = {int(k): v for k, v in json.load(open(referee))["direction"].items()}
+        sign = lambda v: None if v is None else (v > 0) - (v < 0)
+        print(f"\nagainst the referee's key ({len(key)} disputed headlines, direction only):")
+        for name, d in (("Haiku 4.5 (Sept)", old), ("Gemini Flash (Sept)", other), (model, new)):
+            marked = [(k, sign(d.get(k))) for k in key if d.get(k) is not None]
+            right = sum(1 for k, s_ in marked if s_ == key[k])
+            wrong = sum(1 for k, s_ in marked if s_ == -key[k])
+            print(f"  {name:<22} right {right:>2}   backwards {wrong:>2}   "
+                  f"neutral {len(marked) - right - wrong:>2}   no answer {len(key) - len(marked)}")
+        title = {t["id"]: t["title"] for t in items}
+        miss = [k for k in key if sign(new.get(k)) == -key[k]]
+        if miss:
+            print(f"\n{model} backwards on:")
+            for k in miss:
+                print(f"  {title.get(k, k)[:90]}   ({(answers.get(k) or {}).get('reason')})")
+    papers = by_paper(items, other, new)
+    corr = _pearson([v[0] for v in papers.values()], [v[1] for v in papers.values()])
+    print(f"\npapers ranked the same way as Gemini Flash: r = "
+          f"{'n/a' if corr is None else f'{corr:.2f}'}")
+    os.makedirs(OUT, exist_ok=True)
+    path = os.path.join(OUT, f"{model}-{datetime.now(timezone.utc):%Y-%m-%d}.jsonl")
+    with open(path, "w", encoding="utf-8") as f:
+        for t in items:
+            f.write(json.dumps({"article_id": t["id"], "outlet": t["outlet_id"],
+                                "story": t["story"], "target": t["target"], "title": t["title"],
+                                "claude": t["before"], "other": new.get(t["id"]),
+                                "flash": t["earlier_other"],
+                                "reason": (answers.get(t["id"]) or {}).get("reason")},
+                               ensure_ascii=False) + "\n")
+    print(f"answers saved to {os.path.relpath(path, ROOT)}")
     return 0
 
 

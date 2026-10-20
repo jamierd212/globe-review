@@ -177,10 +177,18 @@ def test_rescoring_a_storyless_subject_replaces_rather_than_duplicates():
     assert [tuple(r) for r in rows] == [(1.0, "gemini")], [tuple(r) for r in rows]
 
 
-def test_default_is_gemini_grouped():
+def test_default_is_claude_haiku_grouped():
     os.environ.pop("FPM_PROVIDER", None)
-    assert L.provider() == "gemini"
+    assert L.provider() == "anthropic"
+    assert L.ANTHROPIC_MODEL == "claude-haiku-5-5"
+    assert L.ANTHROPIC_EFFORT == "medium", "low got 10 of 35 disputed headlines backwards"
     assert L.grouped()
+
+
+def test_the_target_sits_beside_every_headline():
+    out = P.group_prompt([{"issue": "x", "target": "the speed of AI development",
+                           "items": [{"id": f"a{i}", "title": f"T{i}"} for i in range(20)]}])
+    assert out.count("SCORE TOWARD: the speed of AI development") == 20
 
 
 def _http_error(code, message, violations=()):
@@ -243,7 +251,7 @@ def test_a_failed_request_is_not_split_into_hundreds():
 
 
 def test_the_run_cap_holds_whatever_happens():
-    os.environ["GEMINI_MAX_REQUESTS"] = "3"
+    os.environ["FPM_MAX_REQUESTS"] = "3"
     ok = {"candidates": [{"content": {"parts": [{"text": "[]"}]}}], "usageMetadata": {}}
     undo = _with_request(lambda m, p, b=None: ok)
     try:
@@ -256,7 +264,7 @@ def test_the_run_cap_holds_whatever_happens():
             pass
     finally:
         undo()
-        os.environ.pop("GEMINI_MAX_REQUESTS", None)
+        os.environ.pop("FPM_MAX_REQUESTS", None)
         L._REQUESTS = 0
 
 

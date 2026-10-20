@@ -11,7 +11,15 @@ Two providers:
 
 Chosen by FPM_PROVIDER, falling back to PROVIDER below.
 
-Gemini 3.8 Flash, thinking "low", since 27 Sept 2026. Compared on 311 of
+Claude Haiku 5.5, effort "medium", since 20 Oct 2026. Tested on the same 310
+articles and story targets as the Gemini comparison below, and marked against
+the referee's key of 35 disputed headlines (data/compare/referee-*.json):
+29 right, 1 backwards (an arguable one Flash also missed), 5 neutral - level
+with Flash at about a fifth of the price. Two settings mattered: at effort
+"low" it got 10 of the 35 backwards, and without the target repeated beside
+each headline (prompt.group_prompt) it got 3. Keep both.
+
+Before that, Gemini 3.8 Flash, thinking "low", from 27 Sept 2026. Compared on 311 of
 Claude Haiku's scored articles and then refereed item by item where the two
 pointed opposite ways: Flash was right on 24 of 25 clear cases. Haiku's
 errors were systematic - scoring against the far side of the target, so
@@ -33,9 +41,14 @@ import time
 import urllib.error
 import urllib.request
 
-PROVIDER = "gemini"
+PROVIDER = "anthropic"
 
-ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
+# Claude Haiku 5.5 since Oct 2026: a tenth of Haiku 4.5's price, and the
+# instruction sheet is long enough to be cached between requests (its
+# minimum is 512 tokens; Haiku 4.5's was 4,096, which the rubric missed).
+# ANTHROPIC_MODEL overrides; ANTHROPIC_EFFORT sets how hard it thinks.
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL") or "claude-haiku-5-5"
+ANTHROPIC_EFFORT = "medium"
 
 GEMINI_API = "https://generativelanguage.googleapis.com/v1beta"
 # The model the comparison was run on. GEMINI_MODEL overrides it. If Google
@@ -50,10 +63,11 @@ GEMINI_RPM = 8
 # used up the reply's length so twenty answers came back cut off. "low" took
 # five seconds and answered all twenty. GEMINI_THINKING overrides it.
 GEMINI_THINKING = "low"
-# A ceiling on requests per run, whatever happens. A normal run makes ten or
-# so; a backlog after an outage a hundred or two. Above this something is
-# wrong, and the cheapest thing to do is stop. GEMINI_MAX_REQUESTS overrides.
-GEMINI_MAX_REQUESTS = 250
+# A ceiling on requests per run, for either provider, whatever happens. A
+# normal run makes ten or so; a backlog after an outage a hundred or two.
+# Above this something is wrong, and the cheapest thing to do is stop.
+# FPM_MAX_REQUESTS overrides.
+MAX_REQUESTS = 250
 _REQUESTS = 0
 _NO_THINKING_CONFIG = set()      # models that refused the setting
 
@@ -105,25 +119,46 @@ def parse_json(txt):
 _ANTHROPIC = None
 
 
-def _anthropic(system, user, max_tokens, retries=4):
-    global _ANTHROPIC
+def _anthropic(system, user, max_tokens):
+    """One request to Claude. The SDK retries rate limits and server errors
+    itself; anything still failing after that, or any refusal of the request
+    as a whole (no credit, bad key), stops the run - see Unavailable."""
+    global _ANTHROPIC, _REQUESTS
+    import anthropic                          # noqa: local import
     if _ANTHROPIC is None:
-        import anthropic                      # noqa: local import
-        _ANTHROPIC = anthropic.Anthropic()
-    for attempt in range(retries):
-        try:
-            r = _ANTHROPIC.messages.create(
-                model=ANTHROPIC_MODEL, max_tokens=max_tokens,
-                system=[{"type": "text", "text": system}],
-                messages=[{"role": "user", "content": user}])
-            txt = "".join(b.text for b in r.content if getattr(b, "type", "") == "text")
-            return parse_json(txt), r.usage.input_tokens, r.usage.output_tokens
-        except Exception as e:
-            if attempt == retries - 1:
-                sys.stderr.write(f"  gave up: {type(e).__name__}: {e}\n")
-                return None, 0, 0
-            time.sleep(2 ** attempt)
-    return None, 0, 0
+        _ANTHROPIC = anthropic.Anthropic(max_retries=4)
+    cap = int(os.environ.get("FPM_MAX_REQUESTS") or MAX_REQUESTS)
+    if _REQUESTS >= cap:
+        raise DailyLimit(f"this run's cap of {cap} requests is reached")
+    _REQUESTS += 1
+    model = ANTHROPIC_MODEL
+    kw = dict(model=model,
+              # thinking counts against max_tokens; leave room for it
+              max_tokens=max(max_tokens, 8000),
+              # the rubric is identical on every request: cache it
+              system=[{"type": "text", "text": system,
+                       "cache_control": {"type": "ephemeral"}}],
+              messages=[{"role": "user", "content": user}])
+    if not model.startswith("claude-haiku-4"):
+        kw["output_config"] = {
+            "effort": os.environ.get("ANTHROPIC_EFFORT") or ANTHROPIC_EFFORT}
+    try:
+        r = _ANTHROPIC.messages.create(**kw)
+    except (anthropic.RateLimitError, anthropic.InternalServerError,
+            anthropic.APIConnectionError) as e:
+        raise Unavailable(f"{type(e).__name__}: {e}")
+    except anthropic.APIStatusError as e:
+        raise Unavailable(f"{e.status_code}: {getattr(e, 'message', e)}")
+    u = r.usage
+    tin = (u.input_tokens + (u.cache_read_input_tokens or 0)
+           + (u.cache_creation_input_tokens or 0))
+    if r.stop_reason == "refusal":
+        # one headline the safeguards will not score: treated like a blank
+        # reply, so the group is split until only that headline is left out
+        sys.stderr.write("  claude declined the request\n")
+        return None, tin, u.output_tokens
+    txt = "".join(b.text for b in r.content if getattr(b, "type", "") == "text")
+    return parse_json(txt), tin, u.output_tokens
 
 
 # ---------------------------------------------------------------- gemini ---
@@ -249,7 +284,7 @@ def _gemini(system, user, max_tokens, retries=5):
     if level and model not in _NO_THINKING_CONFIG:
         body["generationConfig"]["thinkingConfig"] = {"thinkingLevel": level}
     global _REQUESTS
-    cap = int(os.environ.get("GEMINI_MAX_REQUESTS") or GEMINI_MAX_REQUESTS)
+    cap = int(os.environ.get("FPM_MAX_REQUESTS") or MAX_REQUESTS)
     for attempt in range(retries):
         if _REQUESTS >= cap:
             raise DailyLimit(f"this run's cap of {cap} requests is reached")
@@ -321,7 +356,7 @@ def complete(system, user, max_tokens=300):
 
 
 def grouped():
-    """Whether to send several items per request. Gemini's free allowance is
-    counted in requests, so it groups; the Claude path keeps its per-item
-    batch at half price."""
-    return provider() == "gemini"
+    """Several items per request, for both providers: the rubric is most of
+    every request, and sending it once per twenty articles rather than once
+    per article is the largest saving there is."""
+    return True

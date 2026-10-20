@@ -162,6 +162,12 @@ def group_prompt(sections):
                  f"and nothing else): {sec['target']}", ""]
         for it in sec["items"]:
             body.append(f"[{it['id']}]")
+            # The target again beside every item, not only at the top of its
+            # story. Measured Oct 2026 on Claude Haiku 5.5: with it stated once
+            # per story, 3 of 35 disputed headlines came out backwards - the
+            # model lost track of "the speed of AI development" twenty items
+            # down and scored against "slowing AI" instead. Repeated, 1.
+            body.append(f"SCORE TOWARD: {sec['target']}")
             if it.get("desk"):
                 body.append(f"DESK: {it['desk']}   (record it; do not adjust the score for it)")
             body.append("HEADLINE: " + it["title"])
